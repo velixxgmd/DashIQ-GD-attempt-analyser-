@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DashIQ — Geometry Dash Cognitive Analyzer</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<base target="_blank">
+</head>
+<body>
+    <!-- Ambient Background Environment -->
+    <div class="background-environment">
+        <div class="gradient-bg"></div>
+        <div class="particles-container" id="particles"></div>
+        <div class="sparkle-container" id="sparkle-container"></div>
+        <div class="dust-container" id="dust-container"></div>
+        <div class="geometric-shapes" id="geometric-shapes"></div>
+        <div class="light-beam"></div>
+        <div class="light-beam"></div>
+        <div class="light-beam"></div>
+        <div class="light-beam"></div>
+        <div class="light-beam"></div>
+        <div class="blue-glow"></div>
+        <div class="pink-glow"></div>
+        <div class="cyan-glow"></div>
+        <div class="purple-glow"></div>
+        <div class="grid-pattern"></div>
+        <div class="glow-trails"></div>
+        <div class="scan-lines"></div>
+        <div class="noise-overlay"></div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="loading-spinner">
+            <div class="spinner-ring"></div>
+            <div class="spinner-ring"></div>
+            <div class="spinner-ring"></div>
+        </div>
+        <div class="loading-text">Analyzing your runs...</div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-left">
+                <div class="logo">
+                    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                        <rect x="2" y="2" width="24" height="24" rx="4" stroke="url(#logoGrad)" stroke-width="2.5" fill="none"/>
+                        <rect x="8" y="8" width="12" height="12" rx="2" fill="url(#logoGrad)" opacity="0.9"/>
+                        <defs>
+                            <linearGradient id="logoGrad" x1="2" y1="2" x2="26" y2="26">
+                                <stop stop-color="#2D6BFF"/>
+                                <stop offset="1" stop-color="#FF4FD8"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                </div>
+                <span class="brand-name">DashIQ</span>
+            </div>
+            <div class="nav-middle">
+                <a href="#overview" class="nav-item active" data-section="overview">Overview</a>
+                <a href="#analyzer" class="nav-item" data-section="analyzer">Analyzer</a>
+                <a href="#dashboard" class="nav-item" data-section="dashboard">Dashboard</a>
+                <a href="#coach" class="nav-item" data-section="coach">Coach</a>
+            </div>
+            <div class="nav-right">
+                <button class="btn-secondary" id="nav-demo-btn">Demo</button>
+                <button class="btn-primary" onclick="scrollToAnalyzer()">Upload Runs</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section id="overview" class="hero-section">
+        <div class="hero-content">
+            <div class="hero-left">
+                <div class="hero-badge">
+                    <span class="badge-pulse"></span>
+                    <span class="badge-text">v5.3 Engine Active</span>
+                </div>
+                <h1 class="hero-title">
+                    <span class="gradient-text">See Your</span>
+                    <span class="gradient-text-alt">Geometry Dash</span>
+                    <span class="gradient-text">Progress</span>
+                </h1>
+                <p class="hero-subtitle">
+                    Track attempts, deaths, and practice runs with surgical precision. 
+                    Identify weak spots, optimize your routes, and know exactly what to practice next.
+                </p>
+                <div class="hero-buttons">
+                    <button class="btn-primary btn-large magnetic-btn" onclick="scrollToAnalyzer()">
+                        <span>Start Analysis</span>
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 10h12m-4-4l4 4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                    </button>
+                    <button class="btn-secondary btn-large magnetic-btn" id="hero-demo-btn">View Demo Report</button>
+                </div>
+                <div class="hero-stats">
+                    <div class="stat-card" data-tilt>
+                        <div class="stat-shimmer"></div>
+                        <div class="stat-label">Attempt Density</div>
+                        <div class="stat-value" data-animate="0">--</div>
+                    </div>
+                    <div class="stat-card" data-tilt>
+                        <div class="stat-shimmer"></div>
+                        <div class="stat-label">Best Progress</div>
+                        <div class="stat-value" data-animate="0">--</div>
+                    </div>
+                    <div class="stat-card" data-tilt>
+                        <div class="stat-shimmer"></div>
+                        <div class="stat-label">Readiness Score</div>
+                        <div class="stat-value" data-animate="0">--</div>
+                    </div>
+                    <div class="stat-card" data-tilt>
+                        <div class="stat-shimmer"></div>
+                        <div class="stat-label">Route Confidence</div>
+                        <div class="stat-value" data-animate="0">--</div>
+                    </div>
+                </div>
+            </div>
+            <div class="hero-right">
+                <div class="hero-visual">
+                    <div class="orbital-ring ring-1"></div>
+                    <div class="orbital-ring ring-2"></div>
+                    <div class="orbital-ring ring-3"></div>
+                    <div class="orbital-ring ring-4"></div>
+                    <div class="main-panel glass-panel">
+                        <div class="panel-header">
+                            <span class="panel-dot"></span>
+                            Analysis Dashboard
+                        </div>
+                        <div class="panel-content">
+                            <div class="metric-row">
+                                <div class="metric">Best Run <span class="metric-value" id="hero-best-run">--</span></div>
+                                <div class="metric">Readiness <span class="metric-value" id="hero-readiness">--</span></div>
+                            </div>
+                            <div class="metric-row">
+                                <div class="metric">Progression <span class="metric-value" id="hero-progression">--</span></div>
+                                <div class="metric">Nerves <span class="metric-value" id="hero-nerves">--</span></div>
+                            </div>
+                            <div class="route-map">
+                                <div class="route-bar animated-bar"></div>
+                                <div class="route-indicators">
+                                    <span class="indicator"></span>
+                                    <span class="indicator"></span>
+                                    <span class="indicator active"></span>
+                                    <span class="indicator"></span>
+                                    <span class="indicator"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="floating-card card-1 glass-panel" data-float="1">
+                        <div class="card-icon warning-icon">⚠</div>
+                        <div class="card-label">Late Deaths</div>
+                        <div class="card-value" id="hero-late-deaths">--</div>
+                    </div>
+                    <div class="floating-card card-2 glass-panel" data-float="2">
+                        <div class="card-icon">📊</div>
+                        <div class="card-label">Practice Gaps</div>
+                        <div class="card-value" id="hero-practice-gaps">--</div>
+                    </div>
+                    <div class="floating-card card-3 glass-panel" data-float="3">
+                        <div class="card-icon">🎯</div>
+                        <div class="card-label">Weakest Section</div>
+                        <div class="card-value" id="hero-weakest">--</div>
+                    </div>
+                    <div class="floating-card card-4 glass-panel" data-float="4">
+                        <div class="card-icon">💪</div>
+                        <div class="card-label">Confidence</div>
+                        <div class="card-value" id="hero-confidence">--</div>
+                    </div>
+                    <div class="floating-card card-5 glass-panel" data-float="5">
+                        <div class="card-icon">🛤️</div>
+                        <div class="card-label">Routes Found</div>
+                        <div class="card-value" id="hero-routes-found">--</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="scroll-indicator">
+            <div class="scroll-mouse">
+                <div class="scroll-wheel"></div>
+            </div>
+            <span>Scroll to explore</span>
+        </div>
+    </section>
+
+    <!-- Analyzer Input Section -->
+    <section id="analyzer" class="analyzer-section">
+        <div class="section-header reveal-on-scroll">
+            <div class="section-tag">INPUT</div>
+            <h2>Paste Your Run Data</h2>
+            <p>Works with: <code>64% x2</code>, <code>39-81% x1</code>, <code>From 0:</code> or <code>Runs:</code> sections</p>
+        </div>
+        <div class="input-console glass-panel reveal-on-scroll">
+            <div class="console-header">
+                <div class="console-dots">
+                    <span></span><span></span><span></span>
+                </div>
+                <span class="console-title">Run Data Terminal</span>
+            </div>
+            <div class="difficulty-selector">
+                <label>Select Level Difficulty:</label>
+                <select id="difficulty-select">
+                    <option value="0.2">Auto</option>
+                    <option value="0.4">Easy</option>
+                    <option value="0.6">Normal</option>
+                    <option value="0.8">Hard</option>
+                    <option value="1.0" selected>Harder</option>
+                    <option value="1.2">Insane</option>
+                    <option value="1.5">Easy Demon</option>
+                    <option value="2.0">Medium Demon</option>
+                    <option value="3.0">Hard Demon</option>
+                    <option value="4.5">Insane Demon</option>
+                    <option value="7.0">Extreme Demon</option>
+                </select>
+            </div>
+            <div class="difficulty-chips">
+                <button class="chip" data-difficulty="0.2">Auto</button>
+                <button class="chip" data-difficulty="0.4">Easy</button>
+                <button class="chip" data-difficulty="0.6">Normal</button>
+                <button class="chip" data-difficulty="0.8">Hard</button>
+                <button class="chip active" data-difficulty="1.0">Harder</button>
+                <button class="chip" data-difficulty="1.2">Insane</button>
+                <button class="chip" data-difficulty="1.5">Easy Demon</button>
+                <button class="chip" data-difficulty="2.0">Medium Demon</button>
+                <button class="chip" data-difficulty="3.0">Hard Demon</button>
+                <button class="chip" data-difficulty="4.5">Insane Demon</button>
+                <button class="chip" data-difficulty="7.0">Extreme Demon</button>
+            </div>
+            <textarea 
+                id="input-textarea" 
+                class="input-textarea" 
+                placeholder="Paste your Geometry Dash progress data here...
+
+Example formats:
+64% x2
+39% - 81% x1
+From 0: 45% x3, 67% x1
+Runs: 20-40% x5, 50-75% x2
+beat x1 (for verified completion)
+
+Tip: Type END on a new line to auto-analyze"
+            ></textarea>
+            <div class="input-actions">
+                <button id="analyze-button" class="btn-analyze magnetic-btn">
+                    <span>Analyze Runs</span>
+                    <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><path d="M11 5v12m-6-6h12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+                </button>
+                <button class="btn-secondary" id="clear-btn">Clear</button>
+                <button class="btn-secondary" id="paste-demo-btn">Load Demo</button>
+            </div>
+            <div class="input-hint">
+                <span class="hint-icon">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 10v-4m0-2v.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </span>
+                <span>Type <kbd>END</kbd> on a new line or click Analyze to start · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> shortcut</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Dashboard Section -->
+    <section id="dashboard" class="dashboard-section hidden">
+        <div class="section-header reveal-on-scroll">
+            <div class="section-tag">DASHBOARD</div>
+            <h2>Analysis Dashboard</h2>
+            <p>Your performance breakdown in real-time</p>
+        </div>
+        <div class="dashboard-grid">
+            <!-- Session Snapshot -->
+            <div class="dashboard-card clickable-card glass-panel" data-card="session-stats" data-tilt>
+                <div class="card-glow"></div>
+                <div class="card-header">
+                    <div class="card-icon">📊</div>
+                    <h3>Session Stats</h3>
+                </div>
+                <div class="card-content">
+                    <div class="stat-row">
+                        <span class="stat-label">Total Attempts</span>
+                        <span class="stat-value animated-number" id="total-attempts">--</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Best From 0</span>
+                        <span class="stat-value animated-number" id="best-from-0">--</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Coverage</span>
+                        <span class="stat-value animated-number" id="coverage">--</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Mode</span>
+                        <span class="stat-value mode-badge" id="mode-status">--</span>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <span class="click-hint">Click to expand →</span>
+                </div>
+            </div>
+
+            <!-- Readiness Panel -->
+            <div class="dashboard-card clickable-card glass-panel" data-card="readiness" data-tilt>
+                <div class="card-glow"></div>
+                <div class="card-header">
+                    <div class="card-icon">🎯</div>
+                    <h3>Readiness Score</h3>
+                </div>
+                <div class="card-content">
+                    <div class="readiness-wheel">
+                        <div class="readiness-ring"></div>
+                        <div class="readiness-score animated-number" id="readiness-score">--</div>
+                        <div class="readiness-label">Overall Readiness</div>
+                    </div>
+                    <div class="tier-breakdown">
+                        <div class="tier-item">
+                            <span class="tier-label">Skill Tier</span>
+                            <span class="tier-value tier-badge" id="skill-tier">--</span>
+                        </div>
+                        <div class="tier-item">
+                            <span class="tier-label">Consistency Tier</span>
+                            <span class="tier-value tier-badge" id="consistency-tier">--</span>
+                        </div>
+                        <div class="tier-item">
+                            <span class="tier-label">Nerves Tier</span>
+                            <span class="tier-value tier-badge" id="nerves-tier">--</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <span class="click-hint">Click to expand →</span>
+                </div>
+            </div>
+
+            <!-- Most Stable Runs -->
+            <div class="dashboard-card clickable-card glass-panel" data-card="most-stable" data-tilt>
+                <div class="card-glow"></div>
+                <div class="card-header">
+                    <div class="card-icon">💎</div>
+                    <h3>Most Stable Runs</h3>
+                </div>
+                <div class="card-content">
+                    <div class="stable-preview" id="stable-runs-preview">
+                        <div class="preview-item">
+                            <span class="preview-label">Top Stable Run</span>
+                            <span class="preview-value" id="top-stable-run">--</span>
+                        </div>
+                        <div class="preview-item">
+                            <span class="preview-label">Stability Score</span>
+                            <span class="preview-value animated-number" id="stability-score">--</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <span class="click-hint">Click to expand →</span>
+                </div>
+            </div>
+
+            <!-- Most Dangerous Segment -->
+            <div class="dashboard-card clickable-card glass-panel" data-card="dangerous-segment" data-tilt>
+                <div class="card-glow"></div>
+                <div class="card-header">
+                    <div class="card-icon">⚠️</div>
+                    <h3>Most Dangerous Segment</h3>
+                </div>
+                <div class="card-content">
+                    <div class="danger-preview">
+                        <div class="preview-item">
+                            <span class="preview-label">Danger Zone</span>
+                            <span class="preview-value danger-text" id="danger-zone">--</span>
+                        </div>
+                        <div class="preview-item">
+                            <span class="preview-label">Death Count</span>
+                            <span class="preview-value animated-number danger-text" id="danger-death-count">--</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <span class="click-hint">Click to expand →</span>
+                </div>
+            </div>
+
+            <!-- Practice Heatmap -->
+            <div class="dashboard-card wide clickable-card glass-panel" data-card="practice-map" data-tilt>
+                <div class="card-glow"></div>
+                <div class="card-header">
+                    <div class="card-icon">🔥</div>
+                    <h3>Practice Map</h3>
+                </div>
+                <div class="card-content">
+                    <div class="heatmap-container" id="heatmap">
+                        <!-- Heatmap segments generated here -->
+                    </div>
+                    <div class="heatmap-legend">
+                        <div class="legend-item">
+                            <div class="legend-color high"></div>
+                            <span>High Risk</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color medium"></div>
+                            <span>Medium Risk</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color low"></div>
+                            <span>Low Risk</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color safe"></div>
+                            <span>Safe</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <span class="click-hint">Click to expand →</span>
+                </div>
+            </div>
+
+            <!-- Route Path -->
+            <div class="dashboard-card clickable-card glass-panel" data-card="routes" data-tilt>
+                <div class="card-glow"></div>
+                <div class="card-header">
+                    <div class="card-icon">🛤️</div>
+                    <h3>Your Routes</h3>
+                </div>
+                <div class="card-content">
+                    <div class="route-display" id="route-path">
+                        <!-- Route segments generated here -->
+                    </div>
+                    <div class="route-summary" id="route-summary">
+                        <div class="preview-item">
+                            <span class="preview-label">Completable In</span>
+                            <span class="preview-value" id="route-min-runs">--</span>
+                        </div>
+                        <div class="preview-item">
+                            <span class="preview-label">Possible Ways</span>
+                            <span class="preview-value animated-number" id="route-total-ways">--</span>
+                        </div>
+                    </div>
+                    <div class="route-stats">
+                        <div class="route-stat">
+                            <span class="route-label">Reliability</span>
+                            <span class="route-value animated-number" id="route-reliability">--</span>
+                        </div>
+                        <div class="route-stat">
+                            <span class="route-label">Segments</span>
+                            <span class="route-value animated-number" id="route-segments">--</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <span class="click-hint">Click to explore all routes →</span>
+                </div>
+            </div>
+
+            <!-- Choke Points -->
+            <div class="dashboard-card clickable-card glass-panel" data-card="choke-points" data-tilt>
+                <div class="card-glow"></div>
+                <div class="card-header">
+                    <div class="card-icon">🎯</div>
+                    <h3>Choke Points</h3>
+                </div>
+                <div class="card-content">
+                    <div class="choke-preview" id="choke-preview">
+                        <div class="preview-item">
+                            <span class="preview-label">Primary Choke</span>
+                            <span class="preview-value" id="primary-choke">--</span>
+                        </div>
+                        <div class="preview-item">
+                            <span class="preview-label">Choke Rate</span>
+                            <span class="preview-value animated-number" id="choke-rate">--</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <span class="click-hint">Click to expand →</span>
+                </div>
+            </div>
+
+            <!-- Coach Suggestions -->
+            <div class="dashboard-card glass-panel" data-tilt>
+                <div class="card-glow"></div>
+                <div class="card-header">
+                    <div class="card-icon">🧠</div>
+                    <h3>Coach Tips</h3>
+                </div>
+                <div class="card-content">
+                    <div class="suggestion-item">
+                        <div class="suggestion-icon">🎯</div>
+                        <div class="suggestion-text">
+                            <div class="suggestion-label">Next Focus</div>
+                            <div class="suggestion-value" id="next-focus">--</div>
+                        </div>
+                    </div>
+                    <div class="suggestion-item">
+                        <div class="suggestion-icon">🔗</div>
+                        <div class="suggestion-text">
+                            <div class="suggestion-label">Bridge Gaps</div>
+                            <div class="suggestion-value" id="bridge-gaps">--</div>
+                        </div>
+                    </div>
+                    <div class="suggestion-item">
+                        <div class="suggestion-icon">🏆</div>
+                        <div class="suggestion-text">
+                            <div class="suggestion-label">Strong Points</div>
+                            <div class="suggestion-value" id="strong-points">--</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Forecast Panel -->
+            <div class="dashboard-card glass-panel" data-tilt>
+                <div class="card-glow"></div>
+                <div class="card-header">
+                    <div class="card-icon">📈</div>
+                    <h3>Forecast</h3>
+                </div>
+                <div class="card-content">
+                    <div class="forecast-item">
+                        <span class="forecast-label">Est. Remaining Attempts</span>
+                        <span class="forecast-value animated-number" id="est-attempts">--</span>
+                    </div>
+                    <div class="forecast-item">
+                        <span class="forecast-label">Confidence Interval</span>
+                        <span class="forecast-value" id="confidence-interval">--</span>
+                    </div>
+                    <div class="forecast-item">
+                        <span class="forecast-label">Volatility</span>
+                        <span class="forecast-value volatility-badge" id="volatility">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Death Distribution -->
+            <div class="dashboard-card death-card clickable-card glass-panel" data-card="death-distribution" data-tilt>
+                <div class="card-glow"></div>
+                <div class="card-header">
+                    <div class="card-icon">💀</div>
+                    <h3>Death Distribution</h3>
+                </div>
+                <div class="card-content">
+                    <div class="death-distribution" id="death-distribution">
+                        <div class="empty-state">No death data available</div>
+                    </div>
+                    <div class="death-legend">
+                        <div class="legend-item">
+                            <div class="legend-color death-high"></div>
+                            <span>High Danger</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color death-medium"></div>
+                            <span>Medium Danger</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color death-low"></div>
+                            <span>Low Danger</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <span class="click-hint">Click to expand →</span>
+                </div>
+            </div>
+
+            <!-- Progress Trend -->
+            <div class="dashboard-card clickable-card glass-panel" data-card="progress-trend" data-tilt>
+                <div class="card-glow"></div>
+                <div class="card-header">
+                    <div class="card-icon">📈</div>
+                    <h3>Progress Trend</h3>
+                </div>
+                <div class="card-content">
+                    <div class="trend-preview">
+                        <div class="preview-item">
+                            <span class="preview-label">Trend</span>
+                            <span class="preview-value trend-badge" id="progress-trend-value">--</span>
+                        </div>
+                        <div class="preview-item">
+                            <span class="preview-label">Improvement</span>
+                            <span class="preview-value animated-number" id="improvement-rate">--</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <span class="click-hint">Click to expand →</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Results Visualization Section -->
+    <section id="results" class="results-section hidden">
+        <div class="section-header reveal-on-scroll">
+            <div class="section-tag">DETAILS</div>
+            <h2>Detailed Results</h2>
+            <p>Granular analysis of your runs</p>
+        </div>
+        <div class="results-container">
+            <div class="results-card clickable-card glass-panel" data-card="best-runs" data-tilt>
+                <div class="card-glow"></div>
+                <h3>Best Runs</h3>
+                <div id="top-runs-stability" class="runs-list">
+                    <div class="empty-state">No runs data</div>
+                </div>
+                <div class="card-footer">
+                    <span class="click-hint">Click to expand →</span>
+                </div>
+            </div>
+            <div class="results-card clickable-card glass-panel" data-card="longest-runs" data-tilt>
+                <div class="card-glow"></div>
+                <h3>Longest Runs</h3>
+                <div id="top-runs-length" class="runs-list">
+                    <div class="empty-state">No runs data</div>
+                </div>
+                <div class="card-footer">
+                    <span class="click-hint">Click to expand →</span>
+                </div>
+            </div>
+            <div class="results-card clickable-card glass-panel" data-card="death-distribution-detail" data-tilt>
+                <div class="card-glow"></div>
+                <h3>Death Distribution</h3>
+                <div id="from0-distribution" class="distribution-list">
+                    <div class="empty-state">No distribution data</div>
+                </div>
+                <div class="card-footer">
+                    <span class="click-hint">Click to expand →</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Detail Pages -->
+    <section id="detail-best-runs" class="detail-page hidden">
+        <div class="detail-bg"></div>
+        <button class="back-button magnetic-btn" onclick="closeDetailPage()">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M15 10H5m4-4l-4 4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Back
+        </button>
+        <div class="detail-header">
+            <div class="section-tag">RUNS</div>
+            <h2>Best Runs Details</h2>
+            <p>Your most stable and successful practice segments</p>
+        </div>
+        <div class="detail-content">
+            <div class="input-group glass-panel">
+                <label>How many runs to display?</label>
+                <input type="number" id="best-runs-count" min="1" max="50" value="10">
+                <button class="btn-primary" onclick="showBestRuns()">Show</button>
+            </div>
+            <div id="best-runs-detail-list" class="detail-list">
+                <div class="empty-state">No data available</div>
+            </div>
+        </div>
+    </section>
+
+    <section id="detail-longest-runs" class="detail-page hidden">
+        <div class="detail-bg"></div>
+        <button class="back-button magnetic-btn" onclick="closeDetailPage()">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M15 10H5m4-4l-4 4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Back
+        </button>
+        <div class="detail-header">
+            <div class="section-tag">RUNS</div>
+            <h2>Longest Runs Details</h2>
+            <p>Your runs with the longest coverage</p>
+        </div>
+        <div class="detail-content">
+            <div class="input-group glass-panel">
+                <label>How many runs to display?</label>
+                <input type="number" id="longest-runs-count" min="1" max="50" value="10">
+                <button class="btn-primary" onclick="showLongestRuns()">Show</button>
+            </div>
+            <div id="longest-runs-detail-list" class="detail-list">
+                <div class="empty-state">No data available</div>
+            </div>
+        </div>
+    </section>
+
+    <section id="detail-most-stable" class="detail-page hidden">
+        <div class="detail-bg"></div>
+        <button class="back-button magnetic-btn" onclick="closeDetailPage()">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M15 10H5m4-4l-4 4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Back
+        </button>
+        <div class="detail-header">
+            <div class="section-tag">STABILITY</div>
+            <h2>Most Stable Runs Details</h2>
+            <p>Consistent runs based on length × log(count+1)</p>
+        </div>
+        <div class="detail-content">
+            <div class="input-group glass-panel">
+                <label>How many runs to display?</label>
+                <input type="number" id="stable-runs-count" min="1" max="50" value="10">
+                <button class="btn-primary" onclick="showStableRuns()">Show</button>
+            </div>
+            <div id="stable-runs-detail-list" class="detail-list">
+                <div class="empty-state">No data available</div>
+            </div>
+        </div>
+    </section>
+
+    <section id="detail-routes" class="detail-page hidden">
+        <div class="detail-bg"></div>
+        <button class="back-button magnetic-btn" onclick="closeDetailPage()">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M15 10H5m4-4l-4 4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Back
+        </button>
+        <div class="detail-header">
+            <div class="section-tag">ROUTES</div>
+            <h2>Route Explorer</h2>
+            <p>All possible completion paths ranked by reliability</p>
+        </div>
+        <div class="detail-content">
+            <!-- Route Summary Banner -->
+            <div class="route-summary-banner glass-panel" id="route-summary-banner">
+                <div class="route-summary-stat">
+                    <span class="summary-label">Completable In</span>
+                    <span class="summary-value animated-number" id="detail-min-runs">--</span>
+                    <span class="summary-sublabel">minimum runs</span>
+                </div>
+                <div class="route-summary-divider"></div>
+                <div class="route-summary-stat">
+                    <span class="summary-label">Possible Ways</span>
+                    <span class="summary-value animated-number" id="detail-total-ways">--</span>
+                    <span class="summary-sublabel">unique paths</span>
+                </div>
+                <div class="route-summary-divider"></div>
+                <div class="route-summary-stat">
+                    <span class="summary-label">Best Reliability</span>
+                    <span class="summary-value" id="detail-best-reliability">--</span>
+                    <span class="summary-sublabel">top route</span>
+                </div>
+            </div>
+
+            <div class="input-group glass-panel">
+                <label>How many routes to show?</label>
+                <input type="number" id="routes-count" min="1" max="50" value="10">
+                <button class="btn-primary" onclick="showRoutes()">Show</button>
+            </div>
+
+            <div class="route-legend">
+                <div class="route-legend-item">
+                    <span class="reliability-dot high"></span>
+                    <span>High — 1-2 segments</span>
+                </div>
+                <div class="route-legend-item">
+                    <span class="reliability-dot medium"></span>
+                    <span>Medium — 3-4 segments</span>
+                </div>
+                <div class="route-legend-item">
+                    <span class="reliability-dot low"></span>
+                    <span>Lower — 5+ segments</span>
+                </div>
+            </div>
+
+            <div id="routes-detail-list" class="detail-list">
+                <div class="empty-state">No data available</div>
+            </div>
+        </div>
+    </section>
+
+    <section id="detail-death-heatmap" class="detail-page hidden">
+        <div class="detail-bg"></div>
+        <button class="back-button magnetic-btn" onclick="closeDetailPage()">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M15 10H5m4-4l-4 4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Back
+        </button>
+        <div class="detail-header">
+            <div class="section-tag">DEATHS</div>
+            <h2>Death Heatmap Details</h2>
+            <p>Detailed death distribution across the level</p>
+        </div>
+        <div class="detail-content">
+            <div class="input-group glass-panel">
+                <label>How many death locations to show?</label>
+                <input type="number" id="death-locations-count" min="1" max="50" value="20">
+                <button class="btn-primary" onclick="showDeathHeatmap()">Show</button>
+            </div>
+            <div id="death-heatmap-detail-list" class="detail-list">
+                <div class="empty-state">No data available</div>
+            </div>
+        </div>
+    </section>
+
+    <section id="detail-dangerous-segment" class="detail-page hidden">
+        <div class="detail-bg"></div>
+        <button class="back-button magnetic-btn" onclick="closeDetailPage()">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M15 10H5m4-4l-4 4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Back
+        </button>
+        <div class="detail-header">
+            <div class="section-tag">DANGER</div>
+            <h2>Most Dangerous Segment Details</h2>
+            <p>Analyze the most dangerous parts of the level</p>
+        </div>
+        <div class="detail-content">
+            <div id="dangerous-segment-detail" class="detail-list">
+                <div class="empty-state">No data available</div>
+            </div>
+        </div>
+    </section>
+
+    <section id="detail-choke-points" class="detail-page hidden">
+        <div class="detail-bg"></div>
+        <button class="back-button magnetic-btn" onclick="closeDetailPage()">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M15 10H5m4-4l-4 4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Back
+        </button>
+        <div class="detail-header">
+            <div class="section-tag">CHOKES</div>
+            <h2>Choke Points Details</h2>
+            <p>Identify where you consistently get stuck</p>
+        </div>
+        <div class="detail-content">
+            <div id="choke-points-detail" class="detail-list">
+                <div class="empty-state">No data available</div>
+            </div>
+        </div>
+    </section>
+
+    <section id="detail-session-stats" class="detail-page hidden">
+        <div class="detail-bg"></div>
+        <button class="back-button magnetic-btn" onclick="closeDetailPage()">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M15 10H5m4-4l-4 4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Back
+        </button>
+        <div class="detail-header">
+            <div class="section-tag">SESSION</div>
+            <h2>Session Stats Details</h2>
+            <p>Comprehensive breakdown of your analysis session</p>
+        </div>
+        <div class="detail-content">
+            <div id="session-stats-detail" class="detail-list">
+                <div class="empty-state">No data available</div>
+            </div>
+        </div>
+    </section>
+
+    <section id="detail-readiness" class="detail-page hidden">
+        <div class="detail-bg"></div>
+        <button class="back-button magnetic-btn" onclick="closeDetailPage()">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M15 10H5m4-4l-4 4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Back
+        </button>
+        <div class="detail-header">
+            <div class="section-tag">READINESS</div>
+            <h2>Readiness Score Details</h2>
+            <p>Detailed breakdown of your completion readiness</p>
+        </div>
+        <div class="detail-content">
+            <div id="readiness-detail" class="detail-list">
+                <div class="empty-state">No data available</div>
+            </div>
+        </div>
+    </section>
+
+    <section id="detail-practice-map" class="detail-page hidden">
+        <div class="detail-bg"></div>
+        <button class="back-button magnetic-btn" onclick="closeDetailPage()">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M15 10H5m4-4l-4 4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Back
+        </button>
+        <div class="detail-header">
+            <div class="section-tag">HEATMAP</div>
+            <h2>Practice Map Details</h2>
+            <p>Detailed heatmap showing where you need to practice</p>
+        </div>
+        <div class="detail-content">
+            <div id="practice-map-detail" class="detail-list">
+                <div class="empty-state">No data available</div>
+            </div>
+        </div>
+    </section>
+
+    <section id="detail-progress-trend" class="detail-page hidden">
+        <div class="detail-bg"></div>
+        <button class="back-button magnetic-btn" onclick="closeDetailPage()">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M15 10H5m4-4l-4 4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Back
+        </button>
+        <div class="detail-header">
+            <div class="section-tag">TREND</div>
+            <h2>Progress Trend Details</h2>
+            <p>Track your improvement trajectory</p>
+        </div>
+        <div class="detail-content">
+            <div id="progress-trend-detail" class="detail-list">
+                <div class="empty-state">No data available</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Coach Section -->
+    <section id="coach" class="coach-section hidden">
+        <div class="section-header reveal-on-scroll">
+            <div class="section-tag">COACH</div>
+            <h2>Coach Insights</h2>
+            <p>Personalized tips based on your data</p>
+        </div>
+        <div class="coach-container">
+            <div class="coach-card warm glass-panel" data-tilt>
+                <div class="card-glow"></div>
+                <div class="coach-icon">💡</div>
+                <h3>Do Next</h3>
+                <p id="next-action">--</p>
+            </div>
+            <div class="coach-card glass-panel" data-tilt>
+                <div class="card-glow"></div>
+                <div class="coach-icon">⚠️</div>
+                <h3>Biggest Problem</h3>
+                <p id="biggest-gap">--</p>
+            </div>
+            <div class="coach-card glass-panel" data-tilt>
+                <div class="card-glow"></div>
+                <div class="coach-icon">🛤️</div>
+                <h3>Best Practice Route</h3>
+                <p id="best-route">--</p>
+            </div>
+            <div class="coach-card glass-panel" data-tilt>
+                <div class="card-glow"></div>
+                <div class="coach-icon">✅</div>
+                <h3>What's Strong</h3>
+                <p id="strong-areas">--</p>
+            </div>
+            <div class="coach-card warm glass-panel" data-tilt>
+                <div class="card-glow"></div>
+                <div class="coach-icon">🎯</div>
+                <h3>Focus Today</h3>
+                <p id="today-focus">--</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-left">
+                <div class="footer-logo">
+                    <svg width="20" height="20" viewBox="0 0 28 28" fill="none">
+                        <rect x="2" y="2" width="24" height="24" rx="4" stroke="url(#footerLogoGrad)" stroke-width="2.5" fill="none"/>
+                        <rect x="8" y="8" width="12" height="12" rx="2" fill="url(#footerLogoGrad)" opacity="0.9"/>
+                        <defs>
+                            <linearGradient id="footerLogoGrad" x1="2" y1="2" x2="26" y2="26">
+                                <stop stop-color="#2D6BFF"/>
+                                <stop offset="1" stop-color="#FF4FD8"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                    DashIQ
+                </div>
+                <p class="footer-tagline">Turn Geometry Dash runs into real insight</p>
+            </div>
+            <div class="footer-links">
+                <a href="#analyzer">Analyzer</a>
+                <a href="#guide">Guide</a>
+                <a href="#faq">FAQ</a>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <span>Powered by Cognitive Engine v5.3</span>
+        </div>
+    </footer>
+
+    <script src="analyzer.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>
