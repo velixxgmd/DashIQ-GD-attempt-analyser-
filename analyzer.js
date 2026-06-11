@@ -725,9 +725,10 @@ const ROUTE_OVERLAP_TOLERANCE = 5;
  * A segment ending at 61 can connect to one starting at 61, 60, 62, etc.
  */
 function canConnect(prevEnd, nextStart) {
-    // Segments connect if nextStart is within tolerance of prevEnd
-    // This allows 0-61 to connect with 61-100, or 0-60 to connect with 61-100
-    return nextStart <= prevEnd + ROUTE_OVERLAP_TOLERANCE && nextStart >= prevEnd - ROUTE_OVERLAP_TOLERANCE;
+    // Segments connect if nextStart overlaps with or touches prevEnd.
+    // nextStart must be <= prevEnd (no forward gaps allowed).
+    // Small backward tolerance allows overlapping segments (e.g., 0-62 connects to 60-100).
+    return nextStart <= prevEnd && nextStart >= prevEnd - ROUTE_OVERLAP_TOLERANCE;
 }
 
 function analyzePaths(actualRuns, bestFrom0) {
@@ -841,7 +842,7 @@ function analyzePaths(actualRuns, bestFrom0) {
         const opts = [];
         for (let i = 0; i < poolByEnd.length; i++) {
             const r = poolByEnd[i];
-            if (r.start <= cp + ROUTE_OVERLAP_TOLERANCE && r.end > cp) {
+            if (r.start <= cp && r.end > cp) {
                 // Prevent using the same segment twice in one path
                 let alreadyUsed = false;
                 for (let j = 0; j < path.length; j++) {
@@ -903,7 +904,7 @@ function analyzePaths(actualRuns, bestFrom0) {
     const completionRoutes = [];
     for (let i = 0; i < allPaths.length; i++) {
         const p = allPaths[i];
-        if (p.length > 0 && p[0].start <= ROUTE_OVERLAP_TOLERANCE && p[p.length - 1].end >= 100 - ROUTE_OVERLAP_TOLERANCE) {
+        if (p.length > 0 && p[0].start <= 2 && p[p.length - 1].end >= 98) {
             completionRoutes.push(p);
         }
     }
