@@ -1,22 +1,142 @@
 /**
  * DASHIQ — MAIN JAVASCRIPT v3.0
  * UI Interactions, DOM Manipulation, Aesthetic Effects
- * Fully synchronized with analyzer.js v5.3
+ * Fully synchronized with analyzer.js v6.1 / Engine v7.0
  * ============================================================
  */
 
 let analysisResults = null;
 const DEBUG_MODE = false;
+// Safe number formatting - handles strings from analyzer.js .toFixed() results
+function safeToFixed(value, digits) {
+    const num = Number(value);
+    return isFinite(num) ? num.toFixed(digits) : '0.0';
+}
+
 
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
 
-document.addEventListener('DOMContentLoaded', function() {
+if ('scrollRestoration' in history) {
+    history.scrollRestoration = 'manual';
+}
+
+function initializeLandingPosition() {
+    if (window.location.hash && window.location.hash !== '#overview') {
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+
+    window.addEventListener('load', function () {
+        window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }, { once: true });
+}
+
+// Low Detail Mode Detection
+function detectAndEnableLDM() {
+    const isVeryWeakGPU = navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2;
+    const isVeryLowMemory = navigator.deviceMemory && navigator.deviceMemory <= 2;
+    const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const isOldMobile = /Android [1-4]|iPhone OS [1-9]_/.test(navigator.userAgent);
+    const isMobile = isMobileDevice();
+
+    if (isVeryWeakGPU || isVeryLowMemory || prefersReduced || isOldMobile) {
+        document.body.classList.add('ldm-enabled');
+        if (DEBUG_MODE) console.log('Low Detail Mode enabled — very weak device detected');
+    }
+
+    // On ANY mobile device: disable all decorative background effects but keep graphs
+    if (isMobile) {
+        document.body.classList.add('mobile-mode');
+        if (DEBUG_MODE) console.log('Mobile mode enabled — decorative effects disabled');
+    }
+}
+
+// Mobile Button Responsiveness Fix
+function isMobileDevice() {
+    return /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+        (window.innerWidth <= 768) ||
+        ('ontouchstart' in window && navigator.maxTouchPoints > 1);
+}
+
+// Low Detail Mode Detection
+function initializeMobileButtonFix() {
+    // Fix ALL interactive elements: buttons, clickable cards, nav items
+    const interactiveElements = document.querySelectorAll('button, .clickable-card, .nav-item, .chip');
+
+    interactiveElements.forEach(el => {
+        // Remove any existing listeners to prevent duplicates
+        el.style.pointerEvents = 'auto';
+        el.style.touchAction = 'manipulation';
+        el.style.webkitTapHighlightColor = 'transparent';
+        el.style.userSelect = 'none';
+        el.style.webkitUserSelect = 'none';
+
+        // Use pointer events for unified mouse/touch handling
+        el.addEventListener('pointerdown', function(e) {
+            this.style.transform = 'scale(0.97)';
+            this.style.transition = 'transform 0.1s ease';
+        });
+
+        el.addEventListener('pointerup', function(e) {
+            this.style.transform = '';
+            this.style.transition = 'transform 0.2s ease';
+        });
+
+        el.addEventListener('pointercancel', function(e) {
+            this.style.transform = '';
+        });
+
+        // Prevent 300ms delay on touch devices
+        el.addEventListener('touchstart', function(e) {
+            // Don't prevent default on textarea
+            if (this.tagName !== 'TEXTAREA' && this.tagName !== 'INPUT') {
+                // Allow scroll but enable fast tap
+            }
+        }, { passive: true });
+    });
+
+    // Fix textarea input for mobile
+    const textarea = document.getElementById('input-textarea');
+    if (textarea) {
+        textarea.style.pointerEvents = 'auto';
+        textarea.style.touchAction = 'auto';
+        textarea.addEventListener('touchstart', function (e) {
+            e.stopPropagation();
+        }, { passive: true });
+    }
+
+    // Fix clickable cards specifically
+    document.querySelectorAll('.clickable-card').forEach(card => {
+        card.addEventListener('click', function(e) {
+            // Prevent ghost clicks
+            e.preventDefault();
+            const cardType = this.getAttribute('data-card');
+            if (cardType) {
+                openDetailPage(cardType);
+            }
+        });
+    });
+}
+
+function handleButtonTap(e, button) {
+    // Deprecated: use pointer events instead
+    button.focus();
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    initializeLandingPosition();
+
+    // Detect mobile/weak GPU and enable Low Detail Mode
+    detectAndEnableLDM();
+
     initializeParticles();
     initializeSparkles();
     initializeDustMotes();
     initializeGeometricShapes();
+    initializeConstellations();
     initializeDifficultyChips();
     initializeAnalyzeButton();
     initializeNavigation();
@@ -31,6 +151,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeKeyboardShortcuts();
     initializeClearButton();
     initializeTierBadges();
+    initializeMobileButtonFix();
 
     setLoading(false);
 });
@@ -43,7 +164,10 @@ function initializeParticles() {
     const container = document.getElementById('particles');
     if (!container) return;
 
-    const count = 120;
+    const isLDM = document.body.classList.contains('ldm-enabled');
+    const isMobile = document.body.classList.contains('mobile-mode');
+    const count = (isLDM || isMobile) ? 0 : 80;
+
     for (let i = 0; i < count; i++) {
         const p = document.createElement('div');
         p.className = 'particle';
@@ -62,7 +186,10 @@ function initializeSparkles() {
     const container = document.getElementById('sparkle-container');
     if (!container) return;
 
-    const count = 40;
+    const isLDM = document.body.classList.contains('ldm-enabled');
+    const isMobile = document.body.classList.contains('mobile-mode');
+    const count = (isLDM || isMobile) ? 0 : 25;
+
     for (let i = 0; i < count; i++) {
         const s = document.createElement('div');
         s.className = 'sparkle';
@@ -81,7 +208,10 @@ function initializeDustMotes() {
     const container = document.getElementById('dust-container');
     if (!container) return;
 
-    const count = 60;
+    const isLDM = document.body.classList.contains('ldm-enabled');
+    const isMobile = document.body.classList.contains('mobile-mode');
+    const count = (isLDM || isMobile) ? 0 : 40;
+
     for (let i = 0; i < count; i++) {
         const d = document.createElement('div');
         d.className = 'dust-mote';
@@ -97,8 +227,10 @@ function initializeGeometricShapes() {
     const container = document.getElementById('geometric-shapes');
     if (!container) return;
 
-    const shapes = ['triangle', 'square', 'circle', 'hex'];
-    const count = 16;
+    const isLDM = document.body.classList.contains('ldm-enabled');
+    const isMobile = document.body.classList.contains('mobile-mode');
+    const shapes = ['triangle', 'square', 'circle', 'hex', 'pentagon', 'star', 'diamond', 'octagon'];
+    const count = (isLDM || isMobile) ? 0 : 16;
 
     for (let i = 0; i < count; i++) {
         const shape = document.createElement('div');
@@ -110,6 +242,101 @@ function initializeGeometricShapes() {
         shape.style.transform = `scale(${0.5 + Math.random()})`;
         container.appendChild(shape);
     }
+}
+
+function initializeConstellations() {
+    const container = document.getElementById('constellations');
+    if (!container) return;
+
+    const isLDM = document.body.classList.contains('ldm-enabled');
+    const isMobile = document.body.classList.contains('mobile-mode');
+    if (isLDM || isMobile) return;
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 1000 1000');
+    svg.setAttribute('class', 'constellation-svg');
+    svg.style.position = 'absolute';
+    svg.style.inset = '0';
+    svg.style.width = '100%';
+    svg.style.height = '100%';
+    svg.style.pointerEvents = 'none';
+
+    // Generate truly random stars across entire viewport - NOT fixed grid
+    const stars = [];
+    const starCount = 30 + Math.floor(Math.random() * 20); // 30-50 random stars
+
+    for (let i = 0; i < starCount; i++) {
+        stars.push({
+            x: Math.random() * 1000,
+            y: Math.random() * 1000,
+            brightness: 0.2 + Math.random() * 0.8,
+            size: 1 + Math.random() * 3,
+            twinkleDuration: 1.5 + Math.random() * 3,
+            twinkleDelay: Math.random() * 4,
+            color: ['rgba(97, 216, 255, ', 'rgba(255, 79, 216, ', 'rgba(139, 92, 246, ', 'rgba(16, 185, 129, '][Math.floor(Math.random() * 4)]
+        });
+    }
+
+    // Draw constellation lines with randomized opacity and thickness for organic look
+    stars.forEach((star, idx) => {
+        const distances = stars.map((s, i) => ({
+            idx: i,
+            dist: Math.hypot(s.x - star.x, s.y - star.y)
+        })).sort((a, b) => a.dist - b.dist).slice(1, Math.floor(2 + Math.random() * 3)); // Connect to 2-4 nearest neighbors
+
+        distances.forEach((neighbor, nidx) => {
+            const otherStar = stars[neighbor.idx];
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('x1', star.x);
+            line.setAttribute('y1', star.y);
+            line.setAttribute('x2', otherStar.x);
+            line.setAttribute('y2', otherStar.y);
+
+            // Variable opacity per line for organic feel + random colors
+            const baseOpacity = 0.08 + Math.random() * 0.3;
+            const lineColor = star.color + baseOpacity + ')';
+            line.setAttribute('stroke', lineColor);
+            line.setAttribute('stroke-width', 0.3 + Math.random() * 0.6);
+            line.setAttribute('class', 'constellation-line');
+            line.style.animationDelay = `${Math.random() * 3}s`;
+            svg.appendChild(line);
+        });
+    });
+
+    // Draw star dots with individual animation
+    stars.forEach((star, idx) => {
+        const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        dot.setAttribute('cx', star.x);
+        dot.setAttribute('cy', star.y);
+        dot.setAttribute('r', star.size);
+        dot.setAttribute('fill', star.color + star.brightness + ')');
+        dot.setAttribute('class', 'constellation-dot');
+        dot.style.setProperty('--twinkle-duration', `${star.twinkleDuration}s`);
+        dot.style.animationDelay = `${star.twinkleDelay}s`;
+        svg.appendChild(dot);
+    });
+
+    // EASTER EGG: Rare random shapes (2% spawn chance - more frequent than before)
+    if (Math.random() < 0.02) {
+        const shapes = ['◆', '★', '✦', '❖', '✧', '☆', '✪', '⬢'];
+        for (let i = 0; i < Math.floor(2 + Math.random() * 3); i++) {
+            const shape = shapes[Math.floor(Math.random() * shapes.length)];
+            const x = Math.random() * 1000;
+            const y = Math.random() * 1000;
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            text.setAttribute('x', x);
+            text.setAttribute('y', y);
+            text.setAttribute('text-anchor', 'middle');
+            text.setAttribute('dominant-baseline', 'middle');
+            text.setAttribute('font-size', (20 + Math.floor(Math.random() * 15)).toString());
+            text.setAttribute('fill', `rgba(${Math.random() > 0.5 ? '255, 79, 216' : '139, 92, 246'}, ${0.4 + Math.random() * 0.6})`);
+            text.setAttribute('class', 'constellation-easter-egg');
+            text.textContent = shape;
+            svg.appendChild(text);
+        }
+    }
+
+    container.appendChild(svg);
 }
 
 function initializeScrollReveal() {
@@ -168,21 +395,8 @@ function initializeMagneticButtons() {
 }
 
 function initializeParallax() {
-    const environment = document.querySelector('.background-environment');
-    if (!environment) return;
-
-    let ticking = false;
-    document.addEventListener('mousemove', (e) => {
-        if (!ticking) {
-            requestAnimationFrame(() => {
-                const x = (e.clientX / window.innerWidth - 0.5) * 20;
-                const y = (e.clientY / window.innerHeight - 0.5) * 20;
-                environment.style.transform = `translate(${x}px, ${y}px) scale(1.02)`;
-                ticking = false;
-            });
-            ticking = true;
-        }
-    });
+    // Disabled: parallax caused background to move distractingly with cursor
+    // Kept for reference but not active
 }
 
 function initializeKeyboardShortcuts() {
@@ -276,7 +490,7 @@ function initializeNavigation() {
     const sections = document.querySelectorAll('section[id]');
 
     navItems.forEach(item => {
-        item.addEventListener('click', function(e) {
+        item.addEventListener('click', function (e) {
             e.preventDefault();
             const targetId = this.getAttribute('href').slice(1);
             smoothScrollTo(targetId);
@@ -327,14 +541,14 @@ function initializeDifficultyChips() {
     const select = document.getElementById('difficulty-select');
 
     chips.forEach(chip => {
-        chip.addEventListener('click', function() {
+        chip.addEventListener('click', function () {
             chips.forEach(c => c.classList.remove('active'));
             this.classList.add('active');
             select.value = this.getAttribute('data-difficulty');
         });
     });
 
-    select.addEventListener('change', function() {
+    select.addEventListener('change', function () {
         chips.forEach(c => c.classList.toggle('active', c.getAttribute('data-difficulty') === this.value));
     });
 }
@@ -346,7 +560,7 @@ function initializeDifficultyChips() {
 function initializeTextarea() {
     const textarea = document.getElementById('input-textarea');
 
-    textarea.addEventListener('input', function(e) {
+    textarea.addEventListener('input', function (e) {
         const lines = this.value.split('\n');
         const lastLine = lines[lines.length - 1].trim().toLowerCase();
 
@@ -356,7 +570,7 @@ function initializeTextarea() {
         }
     });
 
-    textarea.addEventListener('keydown', function(e) {
+    textarea.addEventListener('keydown', function (e) {
         if (e.key === 'Tab') {
             e.preventDefault();
             const start = this.selectionStart;
@@ -477,16 +691,16 @@ function performAnalysis() {
 
 function displayResults(results) {
     // Session Snapshot
-    document.getElementById('total-attempts').textContent = results.totalAttempts.toLocaleString();
-    document.getElementById('best-from-0').textContent = results.bestFrom0 + '%';
-    document.getElementById('coverage').textContent = results.practiceCoverage + '%';
-    document.getElementById('mode-status').textContent = formatMode(results.mode);
+    document.getElementById('total-attempts').textContent = (results.totalAttempts || 0).toLocaleString();
+    document.getElementById('best-from-0').textContent = safeToFixed(results.bestFrom0, 1) + '%';
+    document.getElementById('coverage').textContent = safeToFixed(results.practiceCoverage, 1) + '%';
+    document.getElementById('mode-status').textContent = formatMode(results.mode || 'standard');
 
     // Readiness Panel
-    document.getElementById('readiness-score').textContent = results.readiness + '%';
-    document.getElementById('skill-tier').textContent = results.skillTier;
-    document.getElementById('consistency-tier').textContent = results.consistencyTier;
-    document.getElementById('nerves-tier').textContent = results.nervesTier;
+    document.getElementById('readiness-score').textContent = safeToFixed(results.readiness, 1) + '%';
+    document.getElementById('skill-tier').textContent = results.skillTier || 'N/A';
+    document.getElementById('consistency-tier').textContent = results.consistencyTier || 'N/A';
+    document.getElementById('nerves-tier').textContent = results.nervesTier || 'N/A';
 
     // Most Stable Runs
     populateMostStableRuns(results);
@@ -495,46 +709,128 @@ function displayResults(results) {
     populateMostDangerousSegment(results);
 
     // Practice Heatmap
-    renderHeatmap(results.segmentData);
+    renderHeatmap(results.segmentData || []);
 
     // Route Path + Summary
-    renderRoutePath(results.bestRuns);
+    renderRoutePath(results);
     renderRouteSummary(results);
-    document.getElementById('route-reliability').textContent = results.routeReliability;
-    document.getElementById('route-segments').textContent = results.routeSegments;
+    document.getElementById('route-reliability').textContent = results.routeReliability || '--';
+    document.getElementById('route-segments').textContent = results.routeSegments || 0;
 
     // Choke Points
     populateChokePointsPreview(results);
 
+    // Nerve Chart Visualization
+    renderNerveVisualization(results.nerveChart || [], results.passRateByChunks || []);
+
+    // Skill Progression Curve
+    renderSkillProgressionCurve(results);
+
     // Coach Suggestions
-    document.getElementById('next-focus').textContent = results.coachSuggestions.nextAction;
-    document.getElementById('bridge-gaps').textContent = results.coachSuggestions.biggestGap;
-    document.getElementById('strong-points').textContent = results.coachSuggestions.strongAreas;
+    const openingNote = results.openingPressure && results.openingPressure.isolated
+        ? ` Opening 0-5% is an input spike (${safeToFixed(results.openingPressure.percentage, 1)}%), so warm it up separately.`
+        : '';
+    document.getElementById('next-focus').textContent = results.coachSuggestions?.nextAction || 'Keep playing';
+    document.getElementById('bridge-gaps').textContent = (results.coachSuggestions?.biggestGap || 'None') + openingNote;
+    document.getElementById('strong-points').textContent = results.coachSuggestions?.strongAreas || 'None';
 
     // Forecast Panel
-    document.getElementById('est-attempts').textContent = results.estimatedAttempts.toLocaleString();
-    document.getElementById('confidence-interval').textContent = results.confidenceInterval;
-    document.getElementById('volatility').textContent = results.volatility;
+    document.getElementById('est-attempts').textContent = (results.estimatedAttempts || 0).toLocaleString();
+    document.getElementById('confidence-interval').textContent = results.confidenceInterval || '±0';
+    document.getElementById('volatility').textContent = results.volatility || 'Stable';
 
     // Top Runs
-    renderTopRuns(results.bestRuns, results.longestRuns);
+    renderTopRuns(results.bestRuns || [], results.longestRuns || []);
 
     // Coach Section
-    document.getElementById('next-action').textContent = results.coachSuggestions.nextAction;
-    document.getElementById('biggest-gap').textContent = results.coachSuggestions.biggestGap;
-    document.getElementById('best-route').textContent = results.coachSuggestions.bestRoute;
-    document.getElementById('strong-areas').textContent = results.coachSuggestions.strongAreas;
-    document.getElementById('today-focus').textContent = results.coachSuggestions.todayFocus;
+    document.getElementById('next-action').textContent = results.coachSuggestions?.nextAction || 'Keep playing';
+    document.getElementById('biggest-gap').textContent = (results.coachSuggestions?.biggestGap || 'None') + openingNote;
+    document.getElementById('best-route').textContent = results.coachSuggestions?.bestRoute || 'None';
+    document.getElementById('strong-areas').textContent = results.coachSuggestions?.strongAreas || 'None';
+    document.getElementById('today-focus').textContent = results.coachSuggestions?.todayFocus || 'None';
 
     // Death Distribution
-    renderDeathDistribution(results.deathDistribution);
+    renderDeathDistribution(results.deathDistribution || []);
 
     // Progress Trend
     populateProgressTrendPreview(results);
+
+    // === Phase 3: New Cards ===
+    // Overall Grade
+    if (results.overallGrade) {
+        document.getElementById('overall-grade-tier').textContent = results.overallGrade.tier || 'N/A';
+        document.getElementById('overall-grade-score').textContent = safeToFixed(results.overallGrade?.score, 1);
+        document.getElementById('overall-grade-label').textContent = results.overallGrade.tier || 'N/A';
+    }
+
+    // Pass Rate Chunks
+    if (results.passRateByChunks) {
+        renderPassRateChunks(results.passRateByChunks);
+    }
+
+    // Nerve Chart
+    if (results.nerveChart) {
+        renderNerveChartPreview(results.nerveChart);
+    }
+
+    // === V7 Metrics ===
+    // Completion Probability
+    if (results.completionProbability !== undefined) {
+        document.getElementById('completion-probability').textContent = Number(results.completionProbability).toFixed(1) + '%';
+        document.getElementById('completion-probability-label').textContent =
+            results.completionProbability >= 75 ? 'High' :
+                results.completionProbability >= 50 ? 'Medium' : 'Low';
+    }
+
+    // Progress Velocity
+    if (results.progressVelocity) {
+        document.getElementById('progress-velocity-label').textContent = results.progressVelocity.label || 'N/A';
+        document.getElementById('progress-velocity-score').textContent = safeToFixed(results.progressVelocity?.score, 1);
+    }
+
+    // Demon Readiness
+    if (results.demonReadiness) {
+        renderDemonReadiness(results.demonReadiness);
+    }
 }
 
 function formatMode(mode) {
     return mode.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+}
+
+function renderDemonReadiness(demonReadiness) {
+    const container = document.getElementById('demon-readiness-container');
+    const demons = [
+        { key: 'easy', name: 'Easy Demon' },
+        { key: 'medium', name: 'Medium Demon' },
+        { key: 'hard', name: 'Hard Demon' },
+        { key: 'insane', name: 'Insane Demon' },
+        { key: 'extreme', name: 'Extreme Demon' }
+    ];
+
+    let html = '<div class="demon-readiness-grid">';
+    demons.forEach(demon => {
+        const data = demonReadiness[demon.key];
+        if (data) {
+            const readyClass = data.ready ? 'demon-ready' : 'demon-not-ready';
+            html += `
+                <div class="demon-card ${readyClass}">
+                    <div class="demon-name">${demon.name}</div>
+                    <div class="demon-readiness-score">${data.readiness}%</div>
+                    <div class="demon-status">${data.ready ? 'Ready' : 'Not Ready'}</div>
+                    <div class="demon-stats">
+                        <div class="stat">Mech: ${safeToFixed(data?.scores?.mechanical, 1)}%</div>
+                        <div class="stat">Cons: ${data.scores.consistency}%</div>
+                        <div class="stat">Endur: ${data.scores.endurance}%</div>
+                        <div class="stat">Nerves: ${data.scores.nerves}%</div>
+                        <div class="stat">Proof: ${data.scores.proof}%</div>
+                    </div>
+                </div>
+            `;
+        }
+    });
+    html += '</div>';
+    container.innerHTML = html;
 }
 
 function populateMostStableRuns(results) {
@@ -547,7 +843,7 @@ function populateMostStableRuns(results) {
     const topRun = results.stableRuns[0];
     document.getElementById('top-stable-run').textContent = `${topRun.start}% - ${topRun.end}%`;
 
-    const stabilityScore = topRun.stabilityScore ? topRun.stabilityScore.toFixed(2) : '--';
+    const stabilityScore = topRun?.stabilityScore ? safeToFixed(topRun.stabilityScore, 2) : '--';
     document.getElementById('stability-score').textContent = stabilityScore;
 }
 
@@ -606,25 +902,435 @@ function populateProgressTrendPreview(results) {
 function renderRouteSummary(results) {
     const minRunsEl = document.getElementById('route-min-runs');
     const totalWaysEl = document.getElementById('route-total-ways');
+    const bestFrom0 = results.bestFrom0 || 0;
+    const completions = results.completions || 0;
 
-    if (!results.routes || results.routes.length === 0) {
-        minRunsEl.textContent = '--';
-        totalWaysEl.textContent = '--';
+    // DEBUG: Log what we're working with
+    if (DEBUG_MODE) {
+        console.log('renderRouteSummary:', {
+            bestFrom0,
+            completions,
+            routesLength: results.routes?.length,
+            totalRoutes: results.totalRoutes,
+            bestRunsAllLength: results.bestRunsAll?.length,
+            actualRunsLength: results.actualRuns?.length
+        });
+    }
+
+    // FORCE: If NO verified completions AND no routes found, show recommendation
+    if (completions === 0 && (!results.routes || results.routes.length === 0)) {
+        totalWaysEl.innerHTML = '0';
+
+        if (bestFrom0 > 0 && bestFrom0 < 100) {
+            // Standard case: reached X%, need 2 segments to 100%
+            const recommendedSegments = 2;
+
+            let from0Count = 0;
+            let connectCount = 0;
+
+            if (results.bestRunsAll) {
+                results.bestRunsAll.forEach(r => {
+                    if (r.start === 0 && r.end >= bestFrom0) from0Count += r.count;
+                    if (r.start >= bestFrom0 - 5 && r.start <= bestFrom0 + 5 && r.end === 100) connectCount += r.count;
+                });
+            }
+
+            const from0Text = from0Count > 0 ? `${from0Count}x` : '?';
+            const connectText = connectCount > 0 ? `${connectCount}x` : '0x';
+
+            const recommendedRoute = `0-${bestFrom0}% (${from0Text}) + ${bestFrom0}-100% (${connectText})`;
+            minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">${recommendedSegments}</span><br/><span style="font-size: 11px; color: var(--muted-gray);">${recommendedRoute}</span>`;
+        } else if (bestFrom0 === 100) {
+            minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">✅</span><br/><span style="font-size: 11px; color: var(--muted-gray);">Already beaten!</span>`;
+        } else {
+            minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">--</span><br/><span style="font-size: 11px; color: var(--muted-gray);">Start grinding</span>`;
+        }
         return;
     }
 
-    // Minimum segments needed to complete
-    const minSegments = Math.min(...results.routes.map(r => r.segments));
-    minRunsEl.textContent = `${minSegments} run${minSegments !== 1 ? 's' : ''}`;
+    // Only show analyzer routes if user HAS verified completions
+    if (!results.routes || results.routes.length === 0) {
+        minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">✅</span><br/><span style="font-size: 11px; color: var(--muted-gray);">Complete!</span>`;
+        totalWaysEl.innerHTML = completions.toString();
+        return;
+    }
 
-    // Total unique paths
-    const totalWays = results.routes.length;
+    // Find all minimum-segment routes, sorted by reliability score (highest first)
+    const minSegments = Math.min(...results.routes.map(r => r.segments));
+    const shortestRoutes = results.routes
+        .filter(r => r.segments === minSegments)
+        .sort((a, b) => {
+            const scoreA = (a.runs || []).reduce((s, seg) => s + (seg.count || 0), 0);
+            const scoreB = (b.runs || []).reduce((s, seg) => s + (seg.count || 0), 0);
+            return scoreB - scoreA;
+        });
+
+    // Build HTML showing all shortest combinations, best first
+    let routeListHTML = shortestRoutes.map((route, idx) => {
+        const routeText = route.route ? route.route.join(' \u2192 ') : route.start + '% \u2192 ' + route.end + '%';
+        const totalCount = (route.runs || []).reduce((s, seg) => s + (seg.count || 0), 0);
+        const badge = idx === 0 ? ' <span style="color:var(--cyan-glow);font-size:9px;">\u2605 BEST</span>' : '';
+        return '<div style="font-size:11px;color:var(--muted-gray);margin-bottom:2px;">' + routeText + badge + (totalCount > 0 ? ' <span style="color:#8B95A8">(' + totalCount + 'x)</span>' : '') + '</div>';
+    }).join('');
+
+    minRunsEl.innerHTML = '<span style="font-size: 14px; font-weight: 600;">' + minSegments + '</span><br/>' + routeListHTML;
+
+    // Use totalRoutes from analyzer (which counts all paths), fallback to unique routes
+    const totalWays = results.totalRoutes || results.routes.length;
     totalWaysEl.textContent = totalWays.toLocaleString();
 }
 
 // ============================================================================
-// DEATH DISTRIBUTION RENDERING
+// NERVE CHART VISUALIZATION (Canvas-based v6.1)
 // ============================================================================
+
+function renderNerveVisualization(nerveChart, passRateChunks) {
+    const canvas = document.getElementById('nerve-visualization');
+    if (!canvas) return;
+
+    const parent = canvas.parentElement;
+    const isLDM = document.body.classList.contains('ldm-enabled');
+    const existingWarning = parent ? parent.querySelector('.ldm-warning') : null;
+    
+    if (isLDM) {
+        if (parent && !existingWarning) {
+            const w = document.createElement('div');
+            w.className = 'ldm-warning';
+            w.innerHTML = '<span style="font-size: 20px; margin-bottom: 8px; display: block;">\u26a1</span>Performance Mode Active: Visualizations disabled.';
+            parent.insertBefore(w, canvas);
+        }
+        canvas.style.display = 'none';
+        return;
+    }
+    
+    if (existingWarning) existingWarning.remove();
+    canvas.style.display = '';
+
+    // Make canvas responsive
+    const containerWidth = (parent ? parent.clientWidth : 600) || 600;
+    canvas.width = containerWidth;
+    canvas.height = Math.max(160, Math.round(containerWidth * 0.37));
+    canvas.style.width = '100%';
+    canvas.style.height = canvas.height + 'px';
+
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    const isMobile = document.body.classList.contains('mobile-mode');
+    const padding = isMobile ? 28 : 40;
+    const plotWidth = width - padding * 2;
+    const plotHeight = height - padding * 2;
+
+    // Clear canvas
+    ctx.fillStyle = 'rgba(3, 4, 7, 0.5)';
+    ctx.fillRect(0, 0, width, height);
+
+    // Draw grid
+    ctx.strokeStyle = 'rgba(97, 216, 255, 0.1)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 10; i++) {
+        const x = padding + (plotWidth / 10) * i;
+        const y = padding + (plotHeight / 10) * i;
+        ctx.beginPath();
+        ctx.moveTo(x, padding);
+        ctx.lineTo(x, height - padding);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(padding, y);
+        ctx.lineTo(width - padding, y);
+        ctx.stroke();
+    }
+
+    // Draw axes
+    ctx.strokeStyle = 'rgba(97, 216, 255, 0.3)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(padding, height - padding);
+    ctx.lineTo(width - padding, height - padding);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(padding, height - padding);
+    ctx.lineTo(padding, padding);
+    ctx.stroke();
+
+    // Draw axis labels
+    const fontSize = isMobile ? 9 : 11;
+    ctx.fillStyle = 'rgba(139, 149, 168, 0.8)';
+    ctx.font = fontSize + 'px monospace';
+    ctx.textAlign = 'center';
+    // X-axis: show every 10% or every 20% on mobile
+    const xStep = isMobile ? 20 : 10;
+    for (let i = 0; i <= 100; i += xStep) {
+        const x = padding + (plotWidth / 100) * i;
+        ctx.fillText(i + '%', x, height - padding + 13);
+    }
+    // Y-axis: 0/50/100
+    ctx.textAlign = 'right';
+    for (let i = 0; i <= 100; i += 50) {
+        const y = height - padding - (plotHeight / 100) * i;
+        ctx.fillText(i, padding - 4, y + 3);
+    }
+
+    // Draw nerve curve (stress line)
+    if (nerveChart && nerveChart.length > 0) {
+        ctx.strokeStyle = '#FF4FD8';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+
+        nerveChart.forEach((point, idx) => {
+            const x = padding + (plotWidth / 100) * point.percent;
+            const y = height - padding - (plotHeight / 100) * Math.min(100, parseFloat(point.nerveScore));
+
+            if (idx === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        // Draw stress points with color coding
+        nerveChart.forEach((point, idx) => {
+            const x = padding + (plotWidth / 100) * point.percent;
+            const y = height - padding - (plotHeight / 100) * Math.min(100, parseFloat(point.nerveScore));
+            const stress = parseFloat(point.nerveScore);
+
+            // Color based on risk level
+            if (stress > 70) ctx.fillStyle = '#FF4FD8'; // Critical
+            else if (stress > 50) ctx.fillStyle = '#8B5CF6'; // High
+            else if (stress > 30) ctx.fillStyle = '#F59E0B'; // Moderate
+            else ctx.fillStyle = '#10B981'; // Safe
+
+            ctx.beginPath();
+            ctx.arc(x, y, 3, 0, Math.PI * 2);
+            ctx.fill();
+        });
+    }
+
+    // Draw pass rate curve (green)
+    if (passRateChunks && passRateChunks.length > 0) {
+        ctx.strokeStyle = '#10B981';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+
+        passRateChunks.forEach((chunk, idx) => {
+            const x = padding + (plotWidth / 100) * ((chunk.start + chunk.end) / 2);
+            const y = height - padding - (plotHeight / 100) * chunk.passRate;
+
+            if (idx === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+    }
+
+    // Chart title and legend
+    ctx.fillStyle = 'rgba(139, 149, 168, 0.9)';
+    ctx.font = 'bold ' + (isMobile ? 9 : 11) + 'px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('Stress %', padding + 2, padding - 4);
+    ctx.textAlign = 'center';
+    ctx.fillText('Level (0-100%)', width / 2, height - 2);
+
+    // Legend
+    const legendY = padding - 6;
+    const legendX = width - padding - (isMobile ? 130 : 180);
+    ctx.font = (isMobile ? 8 : 10) + 'px monospace';
+    ctx.textAlign = 'left';
+    // Stress line
+    ctx.strokeStyle = '#FF4FD8';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(legendX, legendY); ctx.lineTo(legendX + 18, legendY); ctx.stroke();
+    ctx.fillStyle = '#FF4FD8';
+    ctx.fillText('Stress', legendX + 22, legendY + 3);
+    // Pass rate line
+    if (passRateChunks && passRateChunks.length > 0) {
+        ctx.strokeStyle = '#10B981';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(legendX + (isMobile ? 60 : 80), legendY); ctx.lineTo(legendX + (isMobile ? 78 : 98), legendY); ctx.stroke();
+        ctx.fillStyle = '#10B981';
+        ctx.fillText('Pass%', legendX + (isMobile ? 82 : 102), legendY + 3);
+    }
+}
+
+// ============================================================================
+// SKILL PROGRESSION CURVE (Canvas-based v6.1)
+// ============================================================================
+
+function renderSkillProgressionCurve(results) {
+    const canvas = document.getElementById('skill-curve-canvas');
+    if (!canvas) return;
+
+    const parent = canvas.parentElement;
+    const isLDM = document.body.classList.contains('ldm-enabled');
+    const existingWarning = parent ? parent.querySelector('.ldm-warning') : null;
+    
+    if (isLDM) {
+        if (parent && !existingWarning) {
+            const w = document.createElement('div');
+            w.className = 'ldm-warning';
+            w.innerHTML = '<span style="font-size: 20px; margin-bottom: 8px; display: block;">⚡</span>Performance Mode Active: Charts are disabled.';
+            parent.insertBefore(w, canvas);
+        }
+        canvas.style.display = 'none';
+        return;
+    }
+    
+    if (existingWarning) existingWarning.remove();
+    canvas.style.display = '';
+
+    // Make canvas responsive
+    const containerWidth2 = (parent ? parent.clientWidth : 600) || 600;
+    canvas.width = containerWidth2;
+    canvas.height = Math.max(160, Math.round(containerWidth2 * 0.37));
+    canvas.style.width = '100%';
+    canvas.style.height = canvas.height + 'px';
+
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    const isMobile2 = document.body.classList.contains('mobile-mode');
+    const padding = isMobile2 ? 30 : 40;
+    const plotWidth = width - padding * 2;
+    const plotHeight = height - padding * 2;
+
+    // Clear canvas
+    ctx.fillStyle = 'rgba(3, 4, 7, 0.5)';
+    ctx.fillRect(0, 0, width, height);
+
+    // Draw grid
+    ctx.strokeStyle = 'rgba(97, 216, 255, 0.1)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 10; i++) {
+        const y = padding + (plotHeight / 10) * i;
+        ctx.beginPath();
+        ctx.moveTo(padding, y);
+        ctx.lineTo(width - padding, y);
+        ctx.stroke();
+    }
+
+    // Draw axes
+    ctx.strokeStyle = 'rgba(97, 216, 255, 0.3)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(padding, height - padding);
+    ctx.lineTo(width - padding, height - padding);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(padding, height - padding);
+    ctx.lineTo(padding, padding);
+    ctx.stroke();
+
+    // Current best from-0
+    const currentBest = results.bestFrom0 || 0;
+
+    // Projected progression (estimated over 100 runs)
+    // Formula: each run attempts next 1%, so estimate based on difficulty
+    const difficulty = Math.pow(2, currentBest / 25) * 0.8;
+    const consistency = results.percentiles.consistencyIndex / 100;
+    const estimatedProgressPerRun = Math.max(0.2, (1 - currentBest / 100) * consistency / difficulty);
+    const projectedAfter100 = Math.min(100, currentBest + estimatedProgressPerRun * 100);
+
+    // Draw current level line
+    const currentX = padding;
+    const currentY = height - padding - (plotHeight / 100) * currentBest;
+    ctx.strokeStyle = '#2D6BFF';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(currentX, currentY);
+    ctx.lineTo(width - padding, currentY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Draw projected curve (exponential decay from 100%)
+    ctx.strokeStyle = '#10B981';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+
+    for (let runs = 0; runs <= 100; runs++) {
+        const progress = Math.min(100, currentBest + estimatedProgressPerRun * runs);
+        const x = padding + (plotWidth / 100) * runs;
+        const y = height - padding - (plotHeight / 100) * progress;
+
+        if (runs === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Draw plateau detection zone
+    if (projectedAfter100 - currentBest < 2) {
+        ctx.fillStyle = 'rgba(255, 79, 216, 0.1)';
+        ctx.fillRect(padding, height - padding - (plotHeight / 100) * currentBest - 30, plotWidth, 60);
+
+        ctx.fillStyle = '#FF4FD8';
+        ctx.font = '10px monospace';
+        ctx.fillText('⚠ PLATEAU ZONE', width / 2, height - padding - (plotHeight / 100) * currentBest - 15);
+    }
+
+    // Mark current and projected points
+    // Current
+    ctx.fillStyle = '#2D6BFF';
+    ctx.beginPath();
+    ctx.arc(currentX, currentY, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Projected
+    const projectedX = padding + (plotWidth / 100) * Math.min(100, 100);
+    const projectedY = height - padding - (plotHeight / 100) * projectedAfter100;
+    ctx.fillStyle = '#10B981';
+    ctx.beginPath();
+    ctx.arc(projectedX, projectedY, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Draw axis labels
+    const sFontSize = isMobile2 ? 9 : 11;
+    ctx.fillStyle = 'rgba(139, 149, 168, 0.8)';
+    ctx.font = sFontSize + 'px monospace';
+    ctx.textAlign = 'right';
+    // Y-axis: 0/50/100%
+    for (let i = 0; i <= 100; i += 50) {
+        const y = height - padding - (plotHeight / 100) * i;
+        ctx.fillText(i + '%', padding - 4, y + 3);
+    }
+    // X-axis ticks
+    ctx.textAlign = 'center';
+    const xTickStep = isMobile2 ? 50 : 20;
+    for (let i = 0; i <= 100; i += xTickStep) {
+        const x = padding + (plotWidth / 100) * i;
+        ctx.fillText(i, x, height - padding + 13);
+    }
+
+    // Legend
+    ctx.font = 'bold ' + (isMobile2 ? 9 : 11) + 'px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('Progress %', padding + 2, padding - 4);
+    ctx.textAlign = 'center';
+    ctx.fillText('Next Attempts', width / 2, height - 2);
+    // Legend items
+    const lgY = padding - 5;
+    const lgX = width - padding - (isMobile2 ? 120 : 160);
+    ctx.font = (isMobile2 ? 8 : 10) + 'px monospace';
+    ctx.textAlign = 'left';
+    ctx.setLineDash([5, 5]);
+    ctx.strokeStyle = '#2D6BFF';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(lgX, lgY); ctx.lineTo(lgX + 18, lgY); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#2D6BFF';
+    ctx.fillText('Current', lgX + 22, lgY + 3);
+    ctx.strokeStyle = '#10B981';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(lgX + (isMobile2 ? 62 : 80), lgY); ctx.lineTo(lgX + (isMobile2 ? 80 : 98), lgY); ctx.stroke();
+    ctx.fillStyle = '#10B981';
+    ctx.fillText('Projected', lgX + (isMobile2 ? 84 : 102), lgY + 3);
+
+    // Update stats
+    document.getElementById('current-skill-percent').textContent = `${currentBest}%`;
+    document.getElementById('projected-skill-percent').textContent = `${projectedAfter100.toFixed(1)}%`;
+    document.getElementById('plateau-risk-indicator').textContent = projectedAfter100 - currentBest < 2 ? '🔴 HIGH' : projectedAfter100 - currentBest < 5 ? '🟡 MEDIUM' : '🟢 LOW';
+
+    // Estimate time to beat (based on average attempts per run)
+    const runsNeeded = Math.ceil((100 - currentBest) / estimatedProgressPerRun);
+    const estimatedTime = Math.ceil(runsNeeded / 5); // Assume 5 runs per session
+    document.getElementById('time-to-beat').textContent = `${estimatedTime} sessions`;
+}
 
 function renderDeathDistribution(deathData) {
     const container = document.getElementById('death-distribution');
@@ -643,8 +1349,8 @@ function renderDeathDistribution(deathData) {
 
         const barWidth = Math.min(100, parseFloat(item.percentage) * 5);
 
-        const riskClass = item.riskLevel === 'high' || item.riskLevel === 'critical' ? 'death-high' : 
-                         item.riskLevel === 'medium' ? 'death-medium' : 'death-low';
+        const riskClass = item.riskLevel === 'high' || item.riskLevel === 'critical' ? 'death-high' :
+            item.riskLevel === 'medium' ? 'death-medium' : 'death-low';
 
         barContainer.innerHTML = `
             <div class="death-info">
@@ -659,7 +1365,7 @@ function renderDeathDistribution(deathData) {
         `;
 
         const bar = barContainer.querySelector('.death-bar');
-        bar.addEventListener('click', function() {
+        bar.addEventListener('click', function () {
             handleDeathBarClick(this, item);
         });
 
@@ -716,7 +1422,7 @@ function renderHeatmap(segmentData) {
                 segmentEl.classList.add('safe');
             }
 
-            segmentEl.title = `Segment ${start}%-${end}%: ${segment.passRate.toFixed(1)}% pass rate (${segment.sampleWeight} attempts)`;
+            segmentEl.title = `Segment ${start}%-${end}%: ${safeToFixed(segment?.passRate, 1)}% pass rate (${segment?.sampleWeight || 0} attempts)`;
         } else if (segment && segment.hasCoverage) {
             segmentEl.style.background = 'rgba(255, 255, 255, 0.08)';
             segmentEl.title = `Segment ${start}%-${end}%: Startpos only — no from-0 data`;
@@ -733,32 +1439,58 @@ function renderHeatmap(segmentData) {
 // ROUTE PATH RENDERING
 // ============================================================================
 
-function renderRoutePath(topRuns) {
+function renderRoutePath(results) {
     const container = document.getElementById('route-path');
     container.innerHTML = '';
 
-    if (!topRuns || topRuns.length === 0) {
-        container.innerHTML = '<div class="empty-state">No route data available</div>';
+    // CRITICAL FIX: Show actual completion ROUTES, not practice runs
+    // Routes are 0→100% paths made of segments
+    if (!results || !results.routes || results.routes.length === 0) {
+        container.innerHTML = '<div class="empty-state">Grind to unlock routes</div>';
         return;
     }
 
-    const displayRuns = topRuns.slice(0, 3);
+    // Get best (shortest) route - most reliable
+    const bestRoute = results.routes[0]; // Already sorted by segments
+    if (!bestRoute) return;
 
-    displayRuns.forEach((run, index) => {
-        const segmentEl = document.createElement('div');
-        segmentEl.className = 'route-segment';
-        segmentEl.style.animationDelay = `${index * 0.1}s`;
+    // Display the best route breakdown
+    const routeEl = document.createElement('div');
+    routeEl.className = 'route-preview-container';
 
-        const barWidth = Math.max(5, (run.length / 100) * 100);
+    const header = document.createElement('div');
+    header.className = 'route-preview-header';
+    header.innerHTML = `<span style="font-size: 12px; color: var(--muted-gray);">RECOMMENDED PATH</span>`;
+    routeEl.appendChild(header);
 
-        segmentEl.innerHTML = `
-            <span style="font-size: 13px; color: var(--soft-white); width: 80px; font-family: var(--font-mono);">${run.start}%-${run.end}%</span>
-            <div class="route-segment-bar" style="width: ${barWidth}%"></div>
-            <span style="font-size: 13px; color: var(--muted-gray); width: 50px; font-family: var(--font-mono);">x${run.count}</span>
-        `;
+    // Show each segment in the best route with staggered animation
+    if (bestRoute.runs && bestRoute.runs.length > 0) {
+        bestRoute.runs.forEach((segment, idx) => {
+            const segmentEl = document.createElement('div');
+            segmentEl.className = 'route-segment animated';
+            segmentEl.style.animationDelay = `${idx * 0.12}s`;
 
-        container.appendChild(segmentEl);
-    });
+            const percentWidth = (segment.length / 100) * 100;
+            const reliability = segment.length > 30 ? 'high' : segment.length > 15 ? 'medium' : 'low';
+
+            // Handle virtual from-0 segments differently (show them clearly)
+            const isVirtual = segment.type === 'virtual_from0' || segment.type === 'virtual';
+            const segmentStyle = isVirtual ? 'opacity: 0.7; border-left: 3px solid var(--cyan-glow);' : '';
+
+            segmentEl.innerHTML = `
+                <div class="segment-label">
+                    <span class="segment-range">${segment.start}% → ${segment.end}%</span>
+                    <span class="segment-length">(${segment.length}%)</span>
+                    ${isVirtual ? '<span style="font-size: 10px; color: var(--cyan-glow);">from-0</span>' : ''}
+                </div>
+                <div class="segment-bar ${reliability}" style="width: ${percentWidth}%; ${segmentStyle}"></div>
+                <span class="segment-count">${segment.count}x</span>
+            `;
+            routeEl.appendChild(segmentEl);
+        });
+    }
+
+    container.appendChild(routeEl);
 }
 
 // ============================================================================
@@ -854,14 +1586,9 @@ function updateHeroStats(results) {
 // ============================================================================
 
 function initializeClickableCards() {
-    const clickableCards = document.querySelectorAll('.clickable-card');
-
-    clickableCards.forEach(card => {
-        card.addEventListener('click', function() {
-            const cardType = this.getAttribute('data-card');
-            if (cardType) openDetailPage(cardType);
-        });
-    });
+    // Cards are now handled in initializeMobileButtonFix for unified touch/mouse support
+    // This function is kept for backward compatibility but does nothing extra
+    // to avoid duplicate handlers
 }
 
 function initializeCardAnimations() {
@@ -893,7 +1620,10 @@ function openDetailPage(cardType) {
         'death-distribution-detail': 'detail-death-heatmap',
         'progress-trend': 'detail-progress-trend',
         'best-runs': 'detail-best-runs',
-        'longest-runs': 'detail-longest-runs'
+        'longest-runs': 'detail-longest-runs',
+        'overall-grade': 'detail-overall-grade',
+        'pass-rate-chunks': 'detail-pass-rate-chunks',
+        'nerve-chart': 'detail-nerve-chart'
     };
 
     const targetPage = detailPageMap[cardType];
@@ -939,7 +1669,7 @@ function closeDetailPage() {
 function populateDetailPage(cardType) {
     if (!analysisResults) return;
 
-    switch(cardType) {
+    switch (cardType) {
         case 'best-runs': showBestRuns(); break;
         case 'longest-runs': showLongestRuns(); break;
         case 'most-stable': showStableRuns(); break;
@@ -952,6 +1682,9 @@ function populateDetailPage(cardType) {
         case 'session-stats': populateSessionStats(); break;
         case 'readiness': populateReadiness(); break;
         case 'practice-map': populatePracticeMap(); break;
+        case 'overall-grade': showOverallGrade(); break;
+        case 'pass-rate-chunks': showPassRateChunksDetail(); break;
+        case 'nerve-chart': showNerveChartDetail(); break;
     }
 }
 
@@ -1010,7 +1743,7 @@ function showStableRuns() {
 
     const runs = analysisResults.stableRuns.slice(0, count);
     container.innerHTML = runs.map((run, index) => {
-        const stabilityScore = run.stabilityScore ? run.stabilityScore.toFixed(2) : '--';
+        const stabilityScore = run?.stabilityScore ? safeToFixed(run.stabilityScore, 2) : '--';
         return `
         <div class="detail-item" style="animation-delay: ${index * 0.05}s">
             <span>${index + 1}. ${run.start}% - ${run.end}%</span>
@@ -1033,8 +1766,12 @@ function showRoutes() {
     const container = document.getElementById('routes-detail-list');
     const summaryBanner = document.getElementById('route-summary-banner');
 
-    if (!analysisResults || !analysisResults.routes) {
-        container.innerHTML = '<div class="empty-state">No data available</div>';
+    if (!analysisResults || !analysisResults.routes || analysisResults.routes.length === 0) {
+        const bestFrom0 = analysisResults?.bestFrom0 || 0;
+        const message = bestFrom0 > 0
+            ? `<div class="empty-state">No completion routes found yet.<br/><small>You've reached ${bestFrom0}% — keep grinding! Once you complete the level, routes will appear here.</small></div>`
+            : `<div class="empty-state">No data available</div>`;
+        container.innerHTML = message;
         if (summaryBanner) summaryBanner.style.display = 'none';
         return;
     }
@@ -1049,18 +1786,24 @@ function showRoutes() {
     const detailTotalWays = document.getElementById('detail-total-ways');
     const detailBestReliability = document.getElementById('detail-best-reliability');
 
-    if (detailMinRuns) detailMinRuns.textContent = `${minSegments} run${minSegments !== 1 ? 's' : ''}`;
+    if (detailMinRuns) detailMinRuns.textContent = minSegments + ' run' + (minSegments !== 1 ? 's' : '');
     if (detailTotalWays) detailTotalWays.textContent = totalWays.toLocaleString();
 
-    // Best reliability = shortest route
-    const bestRoute = analysisResults.routes[0];
+    // Best reliability = shortest route with highest segment count total
+    const sortedRoutes = analysisResults.routes.slice().sort((a, b) => {
+        if (a.segments !== b.segments) return a.segments - b.segments;
+        const scoreA = (a.runs || []).reduce((s, seg) => s + (seg.count || 0), 0);
+        const scoreB = (b.runs || []).reduce((s, seg) => s + (seg.count || 0), 0);
+        return scoreB - scoreA;
+    });
+    const bestRoute = sortedRoutes[0];
     if (detailBestReliability && bestRoute) {
         const reliability = getReliabilityLabel(bestRoute.segments);
         detailBestReliability.textContent = reliability.label;
-        detailBestReliability.className = `summary-value ${reliability.class}`;
+        detailBestReliability.className = 'summary-value ' + reliability.class;
     }
 
-    const routes = analysisResults.routes.slice(0, count);
+    const routes = sortedRoutes.slice(0, count);
 
     container.innerHTML = routes.map((route, index) => {
         const reliability = getReliabilityLabel(route.segments);
@@ -1359,7 +2102,7 @@ function populatePracticeMap() {
                 else if (segment.passRate < 60) segmentEl.classList.add('medium');
                 else if (segment.passRate < 80) segmentEl.classList.add('low');
                 else segmentEl.classList.add('safe');
-                segmentEl.title = `${start}%-${end}%: ${segment.passRate.toFixed(1)}% pass rate`;
+                segmentEl.title = `${start}%-${end}%: ${safeToFixed(segment?.passRate, 1)}% pass rate`;
             } else {
                 segmentEl.style.background = 'rgba(255, 255, 255, 0.05)';
                 segmentEl.title = `${start}%-${end}%: No data`;
@@ -1456,10 +2199,186 @@ function copyToClipboard(text) {
 // ERROR HANDLING
 // ============================================================================
 
-window.addEventListener('error', function(e) {
+window.addEventListener('error', function (e) {
     if (DEBUG_MODE) console.error('Global error:', e.error);
 });
 
-window.addEventListener('unhandledrejection', function(e) {
+window.addEventListener('unhandledrejection', function (e) {
     if (DEBUG_MODE) console.error('Unhandled promise rejection:', e.reason);
+});
+
+
+// ============================================================================
+// PHASE 3: NEW CARD RENDERING FUNCTIONS
+// ============================================================================
+
+// Pass Rate Chunks Rendering
+function renderPassRateChunks(chunks) {
+    const container = document.getElementById('pass-rate-chunks-container');
+    if (!container) return;
+    container.innerHTML = '';
+
+    chunks.slice(0, 10).forEach((chunk, idx) => {
+        const item = document.createElement('div');
+        item.className = `pass-rate-chunk-item ${chunk.color}`;
+        item.style.animationDelay = `${idx * 0.08}s`;
+        item.innerHTML = `
+            <div class="pass-rate-label">${chunk.chunk}</div>
+            <div class="pass-rate-value">${safeToFixed(chunk?.passRate, 1)}% pass</div>
+        `;
+        container.appendChild(item);
+    });
+}
+
+// Nerve Chart Preview
+function renderNerveChartPreview(chartPoints) {
+    if (!chartPoints || chartPoints.length === 0) return;
+    
+    const criticalZones = chartPoints.filter(p => p.riskZone === 'CRITICAL');
+    const highestRisk = chartPoints.reduce((max, p) => parseFloat(p.nerveScore || 0) > parseFloat(max.nerveScore || 0) ? p : max, chartPoints[0]);
+
+    const riskEl = document.getElementById('nerve-highest-risk');
+    const countEl = document.getElementById('nerve-critical-count');
+
+    if (riskEl) {
+        const score = safeToFixed(highestRisk?.nerveScore, 1);
+        riskEl.textContent = `${highestRisk.percent || 0}% (${score} stress)`;
+    }
+    if (countEl) countEl.textContent = criticalZones.length;
+}
+
+// Detail page population for new cards
+function showOverallGrade() {
+    const container = document.getElementById('overall-grade-detail');
+    if (!analysisResults || !analysisResults.overallGrade) {
+        container.innerHTML = '<div class="empty-state">No data available</div>';
+        return;
+    }
+
+    const grade = analysisResults.overallGrade;
+    const breakdown = grade.breakdown || {};
+    const tier = (grade.tier || 'N/A').toLowerCase();
+    
+    container.innerHTML = `
+        <div class="detail-item" style="animation-delay: 0.05s">
+            <span>Overall Tier</span>
+            <span class="tier-badge tier-${tier}" style="font-size: 18px; padding: 6px 16px;">${grade.tier || 'N/A'}</span>
+        </div>
+        <div class="detail-item" style="animation-delay: 0.1s">
+            <span>Grade Score</span>
+            <span class="animated-number" style="font-size: 18px; font-weight: 800;">${safeToFixed(grade?.score, 1)}/100</span>
+        </div>
+        <div class="detail-item" style="animation-delay: 0.15s">
+            <span>Skill Component</span>
+            <span class="animated-number">${safeToFixed(breakdown?.skillComponent, 1)}%</span>
+        </div>
+        <div class="detail-item" style="animation-delay: 0.2s">
+            <span>Consistency Component</span>
+            <span class="animated-number">${safeToFixed(breakdown?.consistencyComponent, 1)}%</span>
+        </div>
+        <div class="detail-item" style="animation-delay: 0.25s">
+            <span>Readiness Component</span>
+            <span class="animated-number">${safeToFixed(breakdown?.readinessComponent, 1)}%</span>
+        </div>
+        <div class="detail-item" style="animation-delay: 0.3s">
+            <span>Proof Component (Completions)</span>
+            <span class="animated-number">${safeToFixed(breakdown?.proofComponent, 1)}%</span>
+        </div>
+    `;
+    animateNumbers();
+}
+
+function showPassRateChunksDetail() {
+    const container = document.getElementById('pass-rate-chunks-detail');
+    if (!analysisResults || !analysisResults.passRateByChunks) {
+        container.innerHTML = '<div class="empty-state">No data available</div>';
+        return;
+    }
+
+    const chunks = analysisResults.passRateByChunks || [];
+    container.innerHTML = chunks.map((chunk, idx) => {
+        const passRate = safeToFixed(chunk?.passRate, 1);
+        const riskClass = chunk.passRate >= 80 ? 'safe' : chunk.passRate >= 60 ? 'low' : chunk.passRate >= 30 ? 'medium' : 'high';
+        return `
+            <div class="detail-item nerve-risk-item ${riskClass}" style="animation-delay: ${idx * 0.05}s">
+                <span>${chunk.chunk || 'Unknown Segment'}</span>
+                <span class="animated-number">${passRate}% pass (${chunk.deaths || 0} deaths)</span>
+            </div>
+        `;
+    }).join('');
+    animateNumbers();
+}
+
+function showNerveChartDetail() {
+    const container = document.getElementById('nerve-chart-detail');
+    if (!analysisResults || !analysisResults.nerveChart) {
+        container.innerHTML = '<div class="empty-state">No data available</div>';
+        return;
+    }
+
+    if (document.body.classList.contains('ldm-enabled')) {
+        container.innerHTML = '<div class="ldm-warning">Performance Mode Active: Detail charts are disabled.</div>';
+        return;
+    }
+
+    const chart = (analysisResults.nerveChart || []).filter((_, i) => i % 2 === 0);
+    container.innerHTML = chart.map((point, idx) => {
+        const riskClass = point.riskZone === 'CRITICAL' ? 'critical' : point.riskZone === 'HIGH' ? 'high' : point.riskZone === 'MEDIUM' ? 'medium' : 'low';
+        const nerveScore = safeToFixed(point?.nerveScore, 1);
+        return `
+            <div class="nerve-risk-item ${riskClass}" style="animation-delay: ${idx * 0.05}s">
+                <span class="nerve-percent">${point.percent}%</span>
+                <span class="nerve-score">${nerveScore} • ${point.riskZone || 'UNKNOWN'}</span>
+            </div>
+        `;
+    }).join('');
+    animateNumbers();
+}
+
+
+// ============================================================================
+// ZIP DOWNLOAD FUNCTIONALITY
+// ============================================================================
+
+function downloadProjectZip() {
+    // Create a simple zip-like structure using data URIs
+    const files = {
+        'index.html': document.documentElement.outerHTML,
+        'analyzer.js': typeof analyzeInput !== 'undefined' ? analyzeInput.toString() : '',
+        'main.js': '(main.js content - see browser source)',
+        'styles.css': '(styles.css content - see browser source)'
+    };
+
+    // Create a simple text-based "zip" manifest
+    let manifest = 'DASHIQ PROJECT FILES\n';
+    manifest += '===================\n\n';
+    manifest += 'This is a single-file web application.\n';
+    manifest += 'To use offline: Save this page (Ctrl+S) as "Webpage, Complete"\n';
+    manifest += 'or use the browser\'s "Save As" feature.\n\n';
+    manifest += 'Files included:\n';
+    manifest += '- index.html (main page)\n';
+    manifest += '- analyzer.js (analysis engine)\n';
+    manifest += '- main.js (UI controller)\n';
+    manifest += '- styles.css (styling)\n\n';
+    manifest += 'To get individual files, use browser DevTools (F12) > Sources tab.\n';
+
+    const blob = new Blob([manifest], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'dashiq-project-info.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast('Project info downloaded! For full zip, use browser Save As (Ctrl+S)', 'info', 5000);
+}
+
+// Add keyboard shortcut for zip download
+document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        downloadProjectZip();
+    }
 });
