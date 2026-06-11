@@ -1,14 +1,43 @@
 /**
  * GEOMETRY DASH COGNITIVE ANALYZER & ENGINE v6.2
- * Fixed: Overlap-based pathfinding, startpos-only practice map
+ * Fixed: Route overlap tolerance, Practice heatmap uses startpos data
  * ============================================================
  */
 
-const RANGE_PATTERN = /(?:^|\s)(\d{1,3})\s*%?\s*[-–—]\s*(\d{1,3})\s*%?\s*x\s*(\d+)(?=[\s,]|$)/gi;
+const RANGE_PATTERN = /(?:^|\s)(\d{1,3})\s*%?\s*-\s*(\d{1,3})\s*%?\s*x\s*(\d+)(?=[\s,]|$)/gi;
 const SINGLE_PATTERN = /(?:^|\s)(\d{1,3})\s*%?\s*x\s*(\d+)(?=[\s,]|$)/gi;
 const BEAT_PATTERN = /(?:beat|beats|beaten|completed|cleared?|clear|won)\s*x\s*(\d+)/gi;
 const LABEL_SEGMENT_PATTERN = /((?:from\s*0|from0)|(?:runs?)|(?:startpos(?:\s+runs)?))\s*:/gi;
 const SECTION_LABELS = ["from 0:", "from0:", "runs:", "run:", "startpos:", "startpos runs:"];
+const RQI_LENGTH_WEIGHT = 0.6;
+const RQI_START_WEIGHT = 0.4;
+const READINESS_SKILL_WEIGHT = 0.30;
+const READINESS_CONSISTENCY_WEIGHT = 0.25;
+const READINESS_ENDING_WEIGHT = 0.20;
+const READINESS_NERVES_WEIGHT = 0.15;
+const READINESS_PROOF_WEIGHT = 0.10;
+const NERVE_DECAY_RATE = 16.5;
+const MAX_PATHWAYS = 5000;
+const MAX_BFS_ITERATIONS = 100000;
+const BFS_TIMEOUT_MS = 2000;
+const MIN_SEGMENT_SAMPLES = 5;
+const OPENING_END_PERCENT = 5;
+const OPENING_FOLLOW_END_PERCENT = 15;
+const ISOLATED_OPENING_WEIGHT = 0.28;
+const EARLY_WALL_WEIGHT = 0.65;
+const LATE_WALL_WEIGHT = 1.18;
+
+// V6.2: INCREASED TOLERANCE — allows segments to overlap or have gaps
+// Old: 5% — too strict. New: 50% allows 0-61 to connect with 61-100,
+// and even 0-83 to connect with 83-100, handling overlaps naturally
+const ROUTE_OVERLAP_TOLERANCE = 50;
+
+const DIFFICULTY_MATRIX = {
+    "auto": 0.2, "easy": 0.4, "normal": 0.6, "hard": 0.8,
+    "harder": 1.0, "insane": 1.2, "easy demon": 1.5,
+    "medium demon": 2.0, "hard demon": 3.0,
+    "insane demon": 4.5, "extreme demon": 7.0
+};
 
 // V7 Constants
 const DEMON_THRESHOLDS_V7 = {
@@ -19,34 +48,218 @@ const DEMON_THRESHOLDS_V7 = {
     extreme: { mechanical: 95, consistency: 92, endurance: 90, nerves: 90, proof: 70 },
 };
 
-const DIFFICULTY_MATRIX = {
-    "auto": 0.2, "easy": 0.4, "normal": 0.6, "hard": 0.8,
-    "harder": 1.0, "insane": 1.2, "easy demon": 1.5,
-    "medium demon": 2.0, "hard demon": 3.0,
-    "insane demon": 4.5, "extreme demon": 7.0
-};
+// ============================================================================
+// V7 FUNCTIONS
+// ============================================================================
 
-// Pathfinding constants
-const MAX_PATHWAYS = 5000;
-const MAX_BFS_ITERATIONS = 100000;
-const BFS_TIMEOUT_MS = 2000;
-const BRANCH_WIDTH = 12;
-const MIN_SEGMENT_SAMPLES = 5;
+function calculateDeathSeverity(percent) {
+    return Math.pow(safeNum(percent) / 100, 2);
+}
 
-// Weight constants
-const RQI_LENGTH_WEIGHT = 0.6;
-const RQI_START_WEIGHT = 0.4;
-const READINESS_SKILL_WEIGHT = 0.30;
-const READINESS_CONSISTENCY_WEIGHT = 0.25;
-const READINESS_ENDING_WEIGHT = 0.20;
-const READINESS_NERVES_WEIGHT = 0.15;
-const READINESS_PROOF_WEIGHT = 0.10;
-const NERVE_DECAY_RATE = 16.5;
-const OPENING_END_PERCENT = 5;
-const OPENING_FOLLOW_END_PERCENT = 15;
-const ISOLATED_OPENING_WEIGHT = 0.28;
-const EARLY_WALL_WEIGHT = 0.65;
-const LATE_WALL_WEIGHT = 1.18;
+function calculateWallScore(segmentDeaths, totalDeaths) {
+    return totalDeaths ? (segmentDeaths / totalDeaths) * 100 : 0;
+}
+
+function countDeathsInRange(from0Freq, start, end) {
+    let deaths = 0;
+    for (const [k, c] of Object.entries(from0Freq || {})) {
+        const p = parseInt(k, 10);
+        if (p >= start && p < end) deaths += c;
+    }
+    return deaths;
+}
+
+function analyzeOpeningPressure(from0Freq) {
+    const total = Object.values(from0Freq || {}).reduce((a, b) => a + b, 0);
+    if (!total) {
+        return { active: false, isolated: false, deaths: 0, followDeaths: 0, percentage: 0, label: "none" };
+    }
+
+    const deaths = countDeathsInRange(from0Freq, 0, OPENING_END_PERCENT);
+    const followDeaths = countDeathsInRange(from0Freq, OPENING_END_PERCENT, OPENING_FOLLOW_END_PERCENT);
+    const percentage = (deaths / total) * 100;
+    const active = deaths >= MIN_SEGMENT_SAMPLES && percentage >= 8;
+    const isolated = active && followDeaths < deaths * 0.75;
+    const label = isolated ? "opening-input" : active ? "opening-wall" : "none";
+
+    return { active, isolated, deaths, followDeaths, percentage, label };
+}
+
+function getWallPriority(start, deaths, severityScore, openingPressure) {
+    let priority = safeNum(severityScore) * safeNum(deaths);
+    if (start < OPENING_END_PERCENT && openingPressure?.isolated) {
+        priority *= ISOLATED_OPENING_WEIGHT;
+    } else if (start < OPENING_FOLLOW_END_PERCENT) {
+        priority *= EARLY_WALL_WEIGHT;
+    } else if (start >= 70) {
+        priority *= LATE_WALL_WEIGHT;
+    }
+    return priority;
+}
+
+function calculateWeightedDeathDistribution(from0Freq) {
+    const total = Object.values(from0Freq || {}).reduce((a, b) => a + b, 0);
+    if (!total) return [];
+    const out = [];
+    const openingPressure = analyzeOpeningPressure(from0Freq);
+
+    for (let i = 0; i < 20; i++) {
+        const start = i * 5;
+        const end = (i + 1) * 5;
+        let deaths = 0;
+        let weightedSeverity = 0;
+
+        for (const [k, c] of Object.entries(from0Freq)) {
+            const p = parseInt(k, 10);
+            if (p >= start && p < end) {
+                deaths += c;
+                weightedSeverity += c * calculateDeathSeverity(p);
+            }
+        }
+
+        if (deaths > 0) {
+            const severityScore = weightedSeverity / deaths;
+            const pct = (deaths / total) * 100;
+            let riskLevel = "low";
+            if (severityScore > 0.5) riskLevel = "critical";
+            else if (severityScore > 0.25) riskLevel = "high";
+            else if (severityScore > 0.1) riskLevel = "medium";
+
+            out.push({
+                segment: start + "-" + end,
+                start, end, deaths,
+                percentage: pct.toFixed(1),
+                severityScore: severityScore.toFixed(3),
+                riskLevel,
+                wallScore: calculateWallScore(deaths, total).toFixed(1),
+                wallPriority: getWallPriority(start, deaths, severityScore, openingPressure).toFixed(3),
+                zoneType: start < OPENING_END_PERCENT && openingPressure.isolated ? "opening-input" : start < OPENING_FOLLOW_END_PERCENT ? "early" : start >= 70 ? "late" : "main",
+            });
+        }
+    }
+
+    return out.sort((a, b) => parseFloat(b.wallPriority) - parseFloat(a.wallPriority));
+}
+
+function calculateEndgameProof(actualRuns) {
+    let proof = 0;
+    for (const run of actualRuns || []) {
+        if (run && run.end === 100) proof += (run.length || 0) * (run.count || 0);
+    }
+    return proof;
+}
+
+function calculateCompletionProbability(bestFrom0, consistencyIndex, readiness, endgameProof) {
+    let score = 0;
+    score += (safeNum(bestFrom0) / 100) * 35;
+    score += (safeNum(consistencyIndex) / 100) * 25;
+    score += (safeNum(readiness) / 100) * 25;
+    score += Math.min(100, safeNum(endgameProof)) * 0.15;
+    return Math.min(99, Math.round(score));
+}
+
+function calculateProgressVelocity(percentiles, currentBest, previousBest, totalAttempts) {
+    const progression = safeNum(currentBest) - safeNum(previousBest);
+    const lateDeaths = Object.entries(percentiles?.from0Freq || {})
+        .filter(([k]) => parseInt(k, 10) >= 80)
+        .reduce((sum, [, v]) => sum + v, 0);
+
+    const consistency = safeNum(percentiles?.consistencyIndex);
+    const attemptsPerPercent = totalAttempts > 0 ? totalAttempts / Math.max(1, safeNum(currentBest)) : 0;
+
+    let velocity = 0;
+    if (progression > 10) velocity += 35;
+    else if (progression > 5) velocity += 25;
+    else if (progression > 0) velocity += 15;
+    else if (progression < 0) velocity -= 20;
+
+    if (consistency > 80) velocity += 30;
+    else if (consistency > 60) velocity += 20;
+    else if (consistency > 40) velocity += 10;
+    else velocity += 5;
+
+    const lateDeathRate = totalAttempts > 0 ? (lateDeaths / totalAttempts) * 100 : 0;
+    if (lateDeathRate < 5) velocity += 20;
+    else if (lateDeathRate < 15) velocity += 15;
+    else if (lateDeathRate < 30) velocity += 10;
+    else velocity += 5;
+
+    if (attemptsPerPercent < 5) velocity += 15;
+    else if (attemptsPerPercent < 10) velocity += 10;
+    else if (attemptsPerPercent < 20) velocity += 5;
+
+    return {
+        score: velocity,
+        label: velocity >= 80 ? "📈 Rising Fast" : velocity >= 60 ? "📈 Improving" : velocity >= 40 ? "➡ Stable" : velocity >= 20 ? "📉 Stalled" : "📉 Declining",
+        class: velocity >= 80 ? "rising-fast" : velocity >= 60 ? "improving" : velocity >= 40 ? "stable" : velocity >= 20 ? "stalled" : "declining",
+        breakdown: { progression, lateDeathRate: lateDeathRate.toFixed(1), consistency: consistency.toFixed(1), attemptsPerPercent: attemptsPerPercent.toFixed(1) }
+    };
+}
+
+function calculateDemonReadiness(skillScore, consistencyIndex, bestFrom0, nervesTier, endgameProof, completions) {
+    const mechanical = Math.min(100, safeNum(skillScore) * 0.9 + (safeNum(completions) > 0 ? 10 : 0));
+    const consistency = Math.min(100, safeNum(consistencyIndex));
+    const endurance = Math.min(100, safeNum(bestFrom0));
+    const nerves = nervesTier === "S" ? 95 : nervesTier === "A" ? 85 : nervesTier === "B" ? 75 : nervesTier === "C" ? 60 : nervesTier === "D" ? 40 : 20;
+    const proof = Math.min(100, safeNum(endgameProof) / 10);
+
+    const demons = ["easy", "medium", "hard", "insane", "extreme"];
+    const out = {};
+    for (const demon of demons) {
+        const t = DEMON_THRESHOLDS_V7[demon];
+        const readiness = Math.min(100, Math.round(
+            (Math.min(1, mechanical / t.mechanical) * 25) +
+            (Math.min(1, consistency / t.consistency) * 25) +
+            (Math.min(1, endurance / t.endurance) * 20) +
+            (Math.min(1, nerves / t.nerves) * 15) +
+            (Math.min(1, proof / t.proof) * 15)
+        ));
+        out[demon] = { readiness, scores: { mechanical, consistency, endurance, nerves, proof }, ready: readiness >= 80 };
+    }
+    return out;
+}
+
+function augmentResult(result, opts) {
+    if (!result || typeof result !== "object") return result;
+
+    const from0Freq = result.from0Freq || {};
+    const actualRuns = result.bestRunsAll || result.bestRuns || [];
+    const weightedDeathDist = calculateWeightedDeathDistribution(from0Freq);
+    const openingPressure = analyzeOpeningPressure(from0Freq);
+    const endgameProof = calculateEndgameProof(actualRuns);
+    const completionProbability = calculateCompletionProbability(
+        result.bestFrom0, safeNum(result.percentiles?.consistencyIndex), result.readiness, endgameProof
+    );
+    const progressVelocity = calculateProgressVelocity(
+        result.percentiles || { consistencyIndex: safeNum(result.percentiles?.consistencyIndex), from0Freq },
+        result.bestFrom0, opts.previousBest || 0, safeNum(result.totalAttempts)
+    );
+    const demonReadiness = calculateDemonReadiness(
+        safeNum(result.skillScore || result.radarData?.raw?.skill || result.percentiles?.best || 0),
+        safeNum(result.percentiles?.consistencyIndex), safeNum(result.bestFrom0), result.nervesTier, endgameProof, safeNum(result.completions)
+    );
+
+    result.weightedDeathDist = weightedDeathDist;
+    result.endgameProof = endgameProof;
+    result.completionProbability = completionProbability;
+    result.progressVelocity = progressVelocity;
+    result.demonReadiness = demonReadiness;
+    result.openingPressure = {
+        active: openingPressure.active, isolated: openingPressure.isolated,
+        deaths: openingPressure.deaths, followDeaths: openingPressure.followDeaths,
+        percentage: openingPressure.percentage.toFixed(1), label: openingPressure.label,
+    };
+    result.wallAnalysis = weightedDeathDist.length
+        ? (weightedDeathDist[0].zoneType === "opening-input"
+            ? "OPENING INPUT: " + weightedDeathDist[0].segment + " | Treat as spawn timing, not the main wall"
+            : "MAIN WALL: " + weightedDeathDist[0].segment + " | Wall Score: " + weightedDeathDist[0].wallScore + "% | Severity: " + weightedDeathDist[0].severityScore)
+        : "MAIN WALL: --";
+    result.forecastBreakdown = result.forecastBreakdown || {};
+    result.forecastBreakdown.endgameProof = endgameProof;
+    result.forecastBreakdown.completionProbability = completionProbability;
+    result.forecastBreakdown.progressVelocity = progressVelocity.label;
+    return result;
+}
 
 // ============================================================================
 // HELPERS
@@ -59,6 +272,7 @@ function safeNum(val, fallback) {
     const n = Number(val);
     return isNaN(n) ? fallback : n;
 }
+
 function stripSectionLabels(text) {
     text = text.trim();
     for (let i = 0; i < SECTION_LABELS.length; i++) {
@@ -86,9 +300,9 @@ function parseRunsSegment(blob) {
         if (start > 100 || end > 100) continue;
         if (end < start) continue;
         if (start === 0 && end === 100) {
-            entries.push({ type: "completion", start: start, end: end, count: count, length: 100 });
+            entries.push({ type: "completion", start, end, count, length: 100 });
         } else {
-            entries.push({ type: "run", start: start, end: end, count: count, length: end - start });
+            entries.push({ type: "run", start, end, count, length: end - start });
         }
     }
     return entries;
@@ -104,10 +318,10 @@ function parseFrom0Segment(blob) {
         const count = parseInt(match[2], 10);
         if (percent > 100) continue;
         if (percent === 100) {
-            entries.push({ type: "completion", start: 0, end: 100, count: count, length: 100 });
+            entries.push({ type: "completion", start: 0, end: 100, count, length: 100 });
             continue;
         }
-        entries.push({ type: "from0", percent: percent, count: count });
+        entries.push({ type: "from0", percent, count });
     }
     return entries;
 }
@@ -118,7 +332,7 @@ function validateInput(text) {
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
-        const rm = line.match(/(\d+)\s*%?\s*[-–—]\s*(\d+)\s*%?\s*x\s*(\d+)/i);
+        const rm = line.match(/(\d+)\s*%?\s*-\s*(\d+)\s*%?\s*x\s*(\d+)/i);
         if (rm) {
             const s = parseInt(rm[1], 10);
             const e = parseInt(rm[2], 10);
@@ -195,13 +409,7 @@ function computeAttemptTotals(entries) {
         else if (e.type === "completion") completions += e.count;
         else startpos += e.count;
     }
-    return {
-        totalAttempts: total,
-        from0Deaths: from0Deaths,
-        startposAttempts: startpos,
-        completions: completions,
-        totalFrom0Attempts: from0Deaths + completions
-    };
+    return { totalAttempts: total, from0Deaths, startposAttempts: startpos, completions, totalFrom0Attempts: from0Deaths + completions };
 }
 
 function countRawAttemptsFromText(text) {
@@ -219,33 +427,17 @@ function countRawAttemptsFromText(text) {
     return total;
 }
 
+
 // ============================================================================
-// RUN BUILDING — Python-inspired: merge duplicates, separate types
+// RUN BUILDING
 // ============================================================================
 
 function buildRuns(entries) {
-    // Merge duplicates
-    const merged = {};
-    for (let i = 0; i < entries.length; i++) {
-        const e = entries[i];
-        if (!e || !e.type) continue;
-        const key = e.type === "from0" ? ("from0_" + e.percent) : ("run_" + e.start + "_" + e.end);
-        if (!merged[key]) {
-            merged[key] = { ...e };
-        } else {
-            merged[key].count += safeNum(e.count);
-        }
-    }
-
-    const uniqueEntries = Object.values(merged);
-
     let bestFrom0 = 0, completions = 0;
     const from0Freq = {};
-    const actualRuns = [];  // startpos runs only
-    const from0Runs = [];   // from0 runs (for reference)
-
-    for (let i = 0; i < uniqueEntries.length; i++) {
-        const e = uniqueEntries[i];
+    const actualRuns = [];
+    for (let i = 0; i < entries.length; i++) {
+        const e = entries[i];
         if (!e || !e.type) continue;
 
         if (e.type === "from0") {
@@ -258,9 +450,8 @@ function buildRuns(entries) {
             }
             bestFrom0 = Math.max(bestFrom0, p);
             from0Freq[p] = (from0Freq[p] || 0) + safeNum(e.count);
-            from0Runs.push({
-                type: "from0_run",
-                start: 0, end: p, length: p,
+            actualRuns.push({
+                type: "from0_run", start: 0, end: p, length: p,
                 count: safeNum(e.count), percent: p
             });
             continue;
@@ -269,11 +460,8 @@ function buildRuns(entries) {
         if (e.type === "completion") {
             completions += safeNum(e.count);
             actualRuns.push({
-                type: "completion",
-                start: safeNum(e.start, 0),
-                end: safeNum(e.end, 100),
-                count: safeNum(e.count),
-                length: 100
+                type: "completion", start: safeNum(e.start, 0), end: safeNum(e.end, 100),
+                count: safeNum(e.count), length: 100
             });
             continue;
         }
@@ -282,225 +470,21 @@ function buildRuns(entries) {
             const start = safeNum(e.start);
             const end = safeNum(e.end);
             if (start < 0 || end < 0 || start > 100 || end > 100) continue;
-            if (end <= start) continue;
+            if (end < start) continue;
             const length = safeNum(e.length, end - start);
-            actualRuns.push({ type: "run", start: start, end: end, count: safeNum(e.count), length: length });
+            actualRuns.push({ type: "run", start, end, count: safeNum(e.count), length });
         }
-    }
-
-    // Separate startpos runs for practice map
-    const startposRuns = actualRuns.filter(function(r) {
-        return r.type === "run";
-    });
-
-    return {
-        bestFrom0: bestFrom0,
-        completions: completions,
-        actualRuns: actualRuns,          // all runs including completions
-        startposRuns: startposRuns,      // ONLY startpos runs for practice map
-        from0Runs: from0Runs,            // from0 runs
-        from0Freq: from0Freq
-    };
-}
-
-
-// ============================================================================
-// PATHFINDING — v6.2: Python-inspired greedy BFS with OVERLAP (not tolerance)
-// ============================================================================
-
-/**
- * Check if segment can connect: nextStart must be <= current position
- * This allows OVERLAP (e.g., 0-61 connects to 61-100, or 0-70 connects to 61-100)
- * but NOT GAPS (e.g., 0-53 does NOT connect to 83-100)
- */
-function canConnect(prevEnd, nextStart) {
-    // Exact: next segment must start at or before where we are
-    return nextStart <= prevEnd;
-}
-
-function analyzePaths(actualRuns, bestFrom0) {
-    // Build routing pool from startpos runs ONLY (not from0 deaths)
-    const routingPool = [];
-    const segmentMap = new Map();
-
-    // Add startpos runs
-    for (let i = 0; i < (actualRuns || []).length; i++) {
-        const r = actualRuns[i];
-        if (!r || r.start === undefined || r.end === undefined) continue;
-        if (r.type !== "run" && r.type !== "completion") continue; // skip from0 entries
-        const start = safeNum(r.start);
-        const end = safeNum(r.end);
-        if (start < 0 || end < 0 || start > 100 || end > 100) continue;
-        if (end <= start) continue;
-
-        const key = start + "_" + end;
-        if (!segmentMap.has(key)) {
-            segmentMap.set(key, { 
-                type: r.type, start: start, end: end, 
-                length: end - start, count: 0 
-            });
-        }
-        const agg = segmentMap.get(key);
-        agg.count += safeNum(r.count);
-    }
-
-    // Add virtual from-0 segment if bestFrom0 exists
-    if (bestFrom0 > 0) {
-        let hasZeroToBest = false;
-        for (const seg of segmentMap.values()) {
-            if (seg.start === 0 && seg.end >= bestFrom0) {
-                hasZeroToBest = true;
-                break;
-            }
-        }
-        if (!hasZeroToBest) {
-            segmentMap.set("0_" + bestFrom0, { 
-                type: "virtual", start: 0, end: bestFrom0, 
-                length: bestFrom0, count: 1 
-            });
-        }
-    }
-
-    for (const agg of segmentMap.values()) {
-        if (agg.count >= MIN_SEGMENT_SAMPLES || agg.type === "virtual") {
-            routingPool.push(agg);
-        }
-    }
-
-    if (routingPool.length === 0) {
-        return {
-            filteredPaths: [],
-            pathsByLength: {},
-            totalPathLengths: 0,
-            allPaths: [],
-            totalCompletionRoutes: 0,
-            totalPathCount: 0
-        };
-    }
-
-    // BFS queue: [current_pct, path]
-    const queue = [{ cp: 0, path: [] }];
-    let head = 0;
-    const allPaths = [];
-    let iterations = 0;
-    const startTime = Date.now();
-
-    while (head < queue.length && allPaths.length < MAX_PATHWAYS) {
-        iterations++;
-        if (iterations > MAX_BFS_ITERATIONS || (Date.now() - startTime) > BFS_TIMEOUT_MS) {
-            break;
-        }
-
-        const item = queue[head++];
-        const cp = item.cp;
-        const path = item.path;
-
-        if (cp >= 100) {
-            allPaths.push(path);
-            continue;
-        }
-
-        // Find segments that can continue from current position
-        // OVERLAP allowed: start <= cp (so 0-70 can connect to 61-100)
-        const opts = [];
-        for (let i = 0; i < routingPool.length; i++) {
-            const r = routingPool[i];
-            if (r.start <= cp && r.end > cp) {
-                // Prevent using same segment twice
-                let alreadyUsed = false;
-                for (let j = 0; j < path.length; j++) {
-                    if (path[j].start === r.start && path[j].end === r.end) {
-                        alreadyUsed = true;
-                        break;
-                    }
-                }
-                if (!alreadyUsed) {
-                    opts.push(r);
-                }
-            }
-        }
-
-        // Python: sort by end descending (greedy - longest first)
-        opts.sort(function(a, b) { return b.end - a.end; });
-
-        // Python: branch width limit
-        for (let i = 0; i < Math.min(opts.length, BRANCH_WIDTH) && allPaths.length < MAX_PATHWAYS; i++) {
-            const r = opts[i];
-            const newPath = path.slice();
-            newPath.push(r);
-            queue.push({ cp: r.end, path: newPath });
-        }
-    }
-
-    // Score paths by reliability (length * log(count+1))
-    const pathScore = function(p) {
-        let score = 0;
-        for (let i = 0; i < p.length; i++) {
-            score += safeNum(p[i].length) * Math.log(safeNum(p[i].count) + 1);
-        }
-        return score;
-    };
-
-    const pathKey = function(p) {
-        return p.map(function(r) { return r.start + "_" + r.end; }).join("|");
-    };
-
-    // Sort: shortest first, then highest score
-    allPaths.sort(function(a, b) {
-        if (a.length !== b.length) return a.length - b.length;
-        return pathScore(b) - pathScore(a);
-    });
-
-    // Filter valid completion routes (must start near 0 and end at 100)
-    const completionRoutes = [];
-    for (let i = 0; i < allPaths.length; i++) {
-        const p = allPaths[i];
-        if (p.length > 0 && p[0].start === 0 && p[p.length - 1].end >= 100) {
-            completionRoutes.push(p);
-        }
-    }
-
-    // Deduplicate
-    const seen = new Set();
-    const uniquePaths = [];
-    for (let i = 0; i < completionRoutes.length; i++) {
-        const p = completionRoutes[i];
-        const s = pathKey(p);
-        if (!seen.has(s)) {
-            seen.add(s);
-            uniquePaths.push(p);
-        }
-    }
-
-    // Format for UI
-    const formattedPaths = uniquePaths.map(function(p) {
-        return {
-            segments: p.length,
-            totalLength: p.reduce(function(sum, r) { return sum + r.length; }, 0),
-            start: 0,
-            end: 100,
-            route: p.map(function(r) { return r.start + "-" + r.end + "%"; }),
-            runs: p
-        };
-    });
-
-    const byLen = {};
-    let total = 0;
-    for (let i = 0; i < uniquePaths.length; i++) {
-        const p = uniquePaths[i];
-        const l = p.length;
-        total += l;
-        if (!byLen[l]) byLen[l] = [];
-        byLen[l].push(p);
     }
 
     return {
-        filteredPaths: formattedPaths,
-        pathsByLength: byLen,
-        totalPathLengths: total,
-        allPaths: uniquePaths,
-        totalCompletionRoutes: completionRoutes.length,
-        totalPathCount: uniquePaths.length
+        bestFrom0, completions, actualRuns,
+        actualRunsSorted: actualRuns.slice().sort(function(a, b) {
+            return (b.length * Math.log(b.count + 1)) - (a.length * Math.log(a.count + 1));
+        }),
+        actualRunsByLength: actualRuns.slice().sort(function(a, b) {
+            return b.length - a.length;
+        }),
+        from0Freq
     };
 }
 
@@ -518,8 +502,7 @@ function calculateStability(run) {
 
 function getStableRuns(actualRuns, limit) {
     limit = limit || 10;
-    const runsOnly = actualRuns.filter(function(r) { return r.type === "run"; });
-    const mapped = runsOnly.map(function(r) {
+    const mapped = actualRuns.map(function(r) {
         return { type: r.type, start: r.start, end: r.end, count: r.count, length: r.length, stabilityScore: calculateStability(r) };
     });
     mapped.sort(function(a, b) {
@@ -530,8 +513,7 @@ function getStableRuns(actualRuns, limit) {
 
 function getBestRuns(actualRuns, limit) {
     limit = limit || 10;
-    const runsOnly = actualRuns.filter(function(r) { return r.type === "run"; });
-    const mapped = runsOnly.map(function(r) {
+    const mapped = actualRuns.map(function(r) {
         const stability = calculateStability(r);
         const reliability = r.count > 0 ? stability / r.count : 0;
         return { type: r.type, start: r.start, end: r.end, count: r.count, length: r.length, stabilityScore: stability, reliabilityScore: reliability };
@@ -546,185 +528,16 @@ function getBestRuns(actualRuns, limit) {
 
 function getLongestRuns(actualRuns, limit) {
     limit = limit || 10;
-    const runsOnly = actualRuns.filter(function(r) { return r.type === "run"; });
-    const sorted = runsOnly.slice().sort(function(a, b) {
+    const sorted = actualRuns.slice().sort(function(a, b) {
         return b.length - a.length;
     });
     return sorted.slice(0, limit);
 }
 
-function calculateDeathSeverity(percent) {
-    return Math.pow(safeNum(percent) / 100, 2);
-}
-function calculateWallScore(segmentDeaths, totalDeaths) {
-    return totalDeaths ? (segmentDeaths / totalDeaths) * 100 : 0;
-}
-function countDeathsInRange(from0Freq, start, end) {
-    let deaths = 0;
-    for (const [k, c] of Object.entries(from0Freq || {})) {
-        const p = parseInt(k, 10);
-        if (p >= start && p < end) deaths += c;
-    }
-    return deaths;
-}
-function analyzeOpeningPressure(from0Freq) {
-    const total = Object.values(from0Freq || {}).reduce((a, b) => a + b, 0);
-    if (!total) {
-        return { active: false, isolated: false, deaths: 0, followDeaths: 0, percentage: 0, label: "none" };
-    }
+// ============================================================================
+// MEMORY-EFFICIENT PERCENTILES
+// ============================================================================
 
-    const deaths = countDeathsInRange(from0Freq, 0, OPENING_END_PERCENT);
-    const followDeaths = countDeathsInRange(from0Freq, OPENING_END_PERCENT, OPENING_FOLLOW_END_PERCENT);
-    const percentage = (deaths / total) * 100;
-    const active = deaths >= MIN_SEGMENT_SAMPLES && percentage >= 8;
-    const isolated = active && followDeaths < deaths * 0.75;
-    const label = isolated ? "opening-input" : active ? "opening-wall" : "none";
-
-    return {
-        active,
-        isolated,
-        deaths,
-        followDeaths,
-        percentage,
-        label,
-    };
-}
-function getWallPriority(start, deaths, severityScore, openingPressure) {
-    let priority = safeNum(severityScore) * safeNum(deaths);
-    if (start < OPENING_END_PERCENT && openingPressure?.isolated) {
-        priority *= ISOLATED_OPENING_WEIGHT;
-    } else if (start < OPENING_FOLLOW_END_PERCENT) {
-        priority *= EARLY_WALL_WEIGHT;
-    } else if (start >= 70) {
-        priority *= LATE_WALL_WEIGHT;
-    }
-    return priority;
-}
-function calculateWeightedDeathDistribution(from0Freq) {
-    const total = Object.values(from0Freq || {}).reduce((a, b) => a + b, 0);
-    if (!total) return [];
-    const out = [];
-    const openingPressure = analyzeOpeningPressure(from0Freq);
-
-    for (let i = 0; i < 20; i++) {
-        const start = i * 5;
-        const end = (i + 1) * 5;
-        let deaths = 0;
-        let weightedSeverity = 0;
-
-        for (const [k, c] of Object.entries(from0Freq)) {
-            const p = parseInt(k, 10);
-            if (p >= start && p < end) {
-                deaths += c;
-                weightedSeverity += c * calculateDeathSeverity(p);
-            }
-        }
-
-        if (deaths > 0) {
-            const severityScore = weightedSeverity / deaths;
-            const pct = (deaths / total) * 100;
-            let riskLevel = "low";
-            if (severityScore > 0.5) riskLevel = "critical";
-            else if (severityScore > 0.25) riskLevel = "high";
-            else if (severityScore > 0.1) riskLevel = "medium";
-
-            out.push({
-                segment: start + "-" + end,
-                start,
-                end,
-                deaths,
-                percentage: pct.toFixed(1),
-                severityScore: severityScore.toFixed(3),
-                riskLevel,
-                wallScore: calculateWallScore(deaths, total).toFixed(1),
-                wallPriority: getWallPriority(start, deaths, severityScore, openingPressure).toFixed(3),
-                zoneType: start < OPENING_END_PERCENT && openingPressure.isolated ? "opening-input" : start < OPENING_FOLLOW_END_PERCENT ? "early" : start >= 70 ? "late" : "main",
-            });
-        }
-    }
-
-    return out.sort((a, b) => parseFloat(b.wallPriority) - parseFloat(a.wallPriority));
-}
-function calculateEndgameProof(actualRuns) {
-    let proof = 0;
-    for (const run of actualRuns || []) {
-        if (run && run.end === 100) proof += (run.length || 0) * (run.count || 0);
-    }
-    return proof;
-}
-function calculateCompletionProbability(bestFrom0, consistencyIndex, readiness, endgameProof) {
-    let score = 0;
-    score += (safeNum(bestFrom0) / 100) * 35;
-    score += (safeNum(consistencyIndex) / 100) * 25;
-    score += (safeNum(readiness) / 100) * 25;
-    score += Math.min(100, safeNum(endgameProof)) * 0.15;
-    return Math.min(99, Math.round(score));
-}
-function calculateProgressVelocity(percentiles, currentBest, previousBest = 0, totalAttempts = 0) {
-    const progression = safeNum(currentBest) - safeNum(previousBest);
-    const lateDeaths = Object.entries(percentiles?.from0Freq || {})
-        .filter(([k]) => parseInt(k, 10) >= 80)
-        .reduce((sum, [, v]) => sum + v, 0);
-
-    const consistency = safeNum(percentiles?.consistencyIndex);
-    const attemptsPerPercent = totalAttempts > 0 ? totalAttempts / Math.max(1, safeNum(currentBest)) : 0;
-
-    let velocity = 0;
-    if (progression > 10) velocity += 35;
-    else if (progression > 5) velocity += 25;
-    else if (progression > 0) velocity += 15;
-    else if (progression < 0) velocity -= 20;
-
-    if (consistency > 80) velocity += 30;
-    else if (consistency > 60) velocity += 20;
-    else if (consistency > 40) velocity += 10;
-    else velocity += 5;
-
-    const lateDeathRate = totalAttempts > 0 ? (lateDeaths / totalAttempts) * 100 : 0;
-    if (lateDeathRate < 5) velocity += 20;
-    else if (lateDeathRate < 15) velocity += 15;
-    else if (lateDeathRate < 30) velocity += 10;
-    else velocity += 5;
-
-    if (attemptsPerPercent < 5) velocity += 15;
-    else if (attemptsPerPercent < 10) velocity += 10;
-    else if (attemptsPerPercent < 20) velocity += 5;
-
-    return {
-        score: velocity,
-        label: velocity >= 80 ? "📈 Rising Fast" : velocity >= 60 ? "📈 Improving" : velocity >= 40 ? "➡ Stable" : velocity >= 20 ? "📉 Stalled" : "📉 Declining",
-        class: velocity >= 80 ? "rising-fast" : velocity >= 60 ? "improving" : velocity >= 40 ? "stable" : velocity >= 20 ? "stalled" : "declining",
-        breakdown: {
-            progression,
-            lateDeathRate: lateDeathRate.toFixed(1),
-            consistency: consistency.toFixed(1),
-            attemptsPerPercent: attemptsPerPercent.toFixed(1),
-        },
-    };
-}
-function calculateDemonReadiness(skillScore, consistencyIndex, bestFrom0, nervesTier, endgameProof, completions) {
-    const mechanical = Math.min(100, safeNum(skillScore) * 0.9 + (safeNum(completions) > 0 ? 10 : 0));
-    const consistency = Math.min(100, safeNum(consistencyIndex));
-    const endurance = Math.min(100, safeNum(bestFrom0));
-    const nerves = nervesTier === "S" ? 95 : nervesTier === "A" ? 85 : nervesTier === "B" ? 75 : nervesTier === "C" ? 60 : nervesTier === "D" ? 40 : 20;
-    const proof = Math.min(100, safeNum(endgameProof) / 10);
-
-    const demons = ["easy", "medium", "hard", "insane", "extreme"];
-    const out = {};
-    for (const demon of demons) {
-        const t = DEMON_THRESHOLDS_V7[demon];
-        const readiness = Math.min(100, Math.round(
-            (Math.min(1, mechanical / t.mechanical) * 25) +
-            (Math.min(1, consistency / t.consistency) * 25) +
-            (Math.min(1, endurance / t.endurance) * 20) +
-            (Math.min(1, nerves / t.nerves) * 15) +
-            (Math.min(1, proof / t.proof) * 15)
-        ));
-        out[demon] = { readiness, scores: { mechanical, consistency, endurance, nerves, proof }, ready: readiness >= 80 };
-    }
-    return out;
-}
-function augmentResult(result, opts = {}
 function calculateFrom0Percentiles(from0Freq, completions) {
     const sortedPercents = Object.keys(from0Freq).map(Number).sort(function(a, b) { return a - b; });
     const totalDeaths = sortedPercents.reduce(function(sum, p) { return sum + (from0Freq[p] || 0); }, 0);
@@ -777,30 +590,34 @@ function calculateFrom0Percentiles(from0Freq, completions) {
     const variance = n > 1 ? m2 / n : 0;
     const stdDev = Math.sqrt(variance);
     const consistencyIndex = best > 0 ? Math.max(0, 100 - (stdDev / best) * 100) : 0;
-    return { p10: p10, p25: p25, p50: p50, p75: p75, p90: p90, best: best, mean: mean, stdDev: stdDev, attempts: totalAttempts, consistencyIndex: consistencyIndex };
+    return { p10, p25, p50, p75, p90, best, mean, stdDev, attempts: totalAttempts, consistencyIndex };
 }
+
 function calculateSkillScore(percentiles) {
     const best = percentiles.best;
     const p90 = percentiles.p90, p75 = percentiles.p75, p50 = percentiles.p50;
     const consistencyIndex = percentiles.consistencyIndex;
-    
-    // V8: Peak performance matters. Early deaths are noise.
+
     const peakSkill = best * 0.45;
     const consistentSkill = p90 * 0.20;
     const midSkill = p75 * 0.15;
     const floorSkill = Math.max(p50, best * 0.25) * 0.10;
     const consistencyBonus = (consistencyIndex / 100) * 15;
     const volumeBonus = Math.min(10, percentiles.attempts / 200);
-    
+
     const rawScore = peakSkill + consistentSkill + midSkill + floorSkill + consistencyBonus + volumeBonus;
     return { 
         score: Math.min(100, rawScore), 
         baseSkill: peakSkill + consistentSkill + midSkill + floorSkill, 
-        consistencyBonus: consistencyBonus, 
-        volumeBonus: volumeBonus, 
-        percentiles: percentiles 
+        consistencyBonus, volumeBonus, 
+        percentiles 
     };
 }
+
+// ============================================================================
+// MODE DETECTION
+// ============================================================================
+
 function detectMode(completions, totalAttempts, bestFrom0, actualRuns, totalFrom0Attempts, percentiles) {
     if (completions === 0) {
         if (bestFrom0 === 0 && actualRuns.length === 0) return "NO_DATA";
@@ -826,6 +643,490 @@ function detectMode(completions, totalAttempts, bestFrom0, actualRuns, totalFrom
     if (completions <= 5) return "MULTIPLE_COMPLETIONS";
     return "REBEAT_FARMING";
 }
+
+// ============================================================================
+// COVERAGE
+// ============================================================================
+
+function calculateCoverage(actualRuns) {
+    if (!actualRuns || actualRuns.length === 0) {
+        return { practice: 0, merged: [], gaps: [{ start: 0, end: 100 }] };
+    }
+    const intervals = actualRuns.map(function(r) { return [r.start, r.end]; }).sort(function(a, b) { return a[0] - b[0]; });
+    const merged = [];
+    let cur = [intervals[0][0], intervals[0][1]];
+    for (let i = 1; i < intervals.length; i++) {
+        if (intervals[i][0] <= cur[1]) {
+            cur[1] = Math.max(cur[1], intervals[i][1]);
+        } else {
+            merged.push([cur[0], cur[1]]);
+            cur = [intervals[i][0], intervals[i][1]];
+        }
+    }
+    merged.push([cur[0], cur[1]]);
+    let total = 0;
+    for (let i = 0; i < merged.length; i++) {
+        total += (merged[i][1] - merged[i][0]);
+    }
+    const gaps = [];
+    if (merged[0][0] > 0) gaps.push({ start: 0, end: merged[0][0] });
+    for (let i = 1; i < merged.length; i++) {
+        if (merged[i][0] > merged[i-1][1]) gaps.push({ start: merged[i-1][1], end: merged[i][0] });
+    }
+    if (merged[merged.length-1][1] < 100) gaps.push({ start: merged[merged.length-1][1], end: 100 });
+    return { practice: Math.min(100, total), merged, gaps };
+}
+
+
+// ============================================================================
+// PATHS (ROUTES) — v6.2: FIXED OVERLAP TOLERANCE
+// ============================================================================
+
+/**
+ * V6.2 FIX: Segments can connect if they OVERLAP or are within tolerance.
+ * This allows 0-61 to connect with 61-100 (touching),
+ * 0-83 to connect with 83-100 (touching),
+ * and even 0-70 to connect with 61-100 (overlapping).
+ * 
+ * The key insight: if you can do 0-61% and 61-100%, you can beat the level
+ * in 2 runs. If you can do 0-70% and 61-100%, they OVERLAP and still work.
+ */
+function canConnect(prevEnd, nextStart) {
+    // V6.2: Allow overlap (nextStart <= prevEnd) OR small gap (within tolerance)
+    // Overlap: next segment starts before or at the end of previous
+    // Gap: next segment starts within tolerance after previous end
+    return nextStart <= prevEnd || nextStart <= prevEnd + ROUTE_OVERLAP_TOLERANCE;
+}
+
+/**
+ * V6.2: Check if a path actually covers 0-100% completely
+ * Uses merged interval logic to verify full coverage
+ */
+function pathCoversFullLevel(path) {
+    if (!path || path.length === 0) return false;
+
+    // Sort by start position
+    const sorted = path.slice().sort((a, b) => a.start - b.start);
+
+    // Check if first segment starts near 0
+    if (sorted[0].start > ROUTE_OVERLAP_TOLERANCE) return false;
+
+    // Merge intervals and check for gaps
+    let currentEnd = sorted[0].end;
+
+    for (let i = 1; i < sorted.length; i++) {
+        const seg = sorted[i];
+        // If there's a gap larger than tolerance, path doesn't cover
+        if (seg.start > currentEnd + ROUTE_OVERLAP_TOLERANCE) {
+            return false;
+        }
+        // Extend coverage
+        currentEnd = Math.max(currentEnd, seg.end);
+    }
+
+    return currentEnd >= 100 - ROUTE_OVERLAP_TOLERANCE;
+}
+
+function analyzePaths(actualRuns, bestFrom0) {
+    const pool = [];
+    const segmentMap = new Map();
+
+    for (let i = 0; i < (actualRuns || []).length; i++) {
+        const r = actualRuns[i];
+        if (!r || r.start === undefined || r.end === undefined) continue;
+        const start = safeNum(r.start);
+        const end = safeNum(r.end);
+        if (start < 0 || end < 0 || start > 100 || end > 100) continue;
+        if (end <= start) continue;
+        const key = start + "_" + end;
+        const length = safeNum(r.length, end - start);
+        const count = safeNum(r.count);
+        if (!segmentMap.has(key)) {
+            segmentMap.set(key, { type: r.type, start, end, length, count: 0, occurrences: 0 });
+        }
+        const agg = segmentMap.get(key);
+        agg.count += count;
+        agg.occurrences += 1;
+        if (agg.type !== "completion" && r.type === "completion") agg.type = "completion";
+    }
+
+    for (const agg of segmentMap.values()) {
+        if (agg.count >= MIN_SEGMENT_SAMPLES) {
+            pool.push(agg);
+        }
+    }
+
+    // V6.2: Add virtual from-0 segment if bestFrom0 exists
+    // This represents proven ability to reach bestFrom0% from 0
+    if (bestFrom0 > 0) {
+        let hasZeroToBest = false;
+        for (const seg of pool) {
+            if (seg.start === 0 && seg.end >= bestFrom0) {
+                hasZeroToBest = true;
+                break;
+            }
+        }
+        if (!hasZeroToBest) {
+            pool.push({ type: "virtual", start: 0, end: bestFrom0, length: bestFrom0, count: 1, occurrences: 1 });
+        }
+    }
+
+    if (pool.length === 0) {
+        return {
+            filteredPaths: [], pathsByLength: {}, totalPathLengths: 0,
+            allPaths: [], totalCompletionRoutes: 0, totalPathCount: 0
+        };
+    }
+
+    const segmentWeight = function(r) {
+        return safeNum(r.length) * Math.log(safeNum(r.count) + 1);
+    };
+
+    // V6.2: Sort by reliability (weight) for better path finding
+    const poolByReliability = pool.slice().sort(function(a, b) {
+        const wa = segmentWeight(a);
+        const wb = segmentWeight(b);
+        if (wb !== wa) return wb - wa;
+        return b.end - a.end;
+    });
+
+    const MAX_OPTS_PER_NODE = 40;
+    const queue = [{ cp: 0, path: [] }];
+    let head = 0;
+    const allPaths = [];
+    let iterations = 0;
+    const startTime = Date.now();
+    let bestCompletionSegments = Infinity;
+
+    // V6.2: BFS with overlap support
+    while (head < queue.length && allPaths.length < MAX_PATHWAYS) {
+        iterations++;
+        if (iterations > MAX_BFS_ITERATIONS || (Date.now() - startTime) > BFS_TIMEOUT_MS) {
+            break;
+        }
+
+        const item = queue[head++];
+        const cp = item.cp;  // current position (furthest reached)
+        const path = item.path;
+
+        // V6.2: Check if we've reached 100%
+        if (cp >= 100) {
+            allPaths.push(path);
+            if (path.length < bestCompletionSegments) bestCompletionSegments = path.length;
+            continue;
+        }
+
+        // Pruning: if we already found a shorter path, skip longer ones
+        if (path.length >= bestCompletionSegments) {
+            continue;
+        }
+
+        // V6.2: Find segments that can continue from current position
+        // A segment can be used if it starts before or at current position + tolerance
+        // (allowing overlap) OR if it starts within tolerance after current position
+        const opts = [];
+        for (let i = 0; i < poolByReliability.length; i++) {
+            const r = poolByReliability[i];
+
+            // V6.2: Segment is usable if:
+            // 1. It starts at or before current position (overlap)
+            // 2. It starts within tolerance after current position (gap)
+            // 3. It extends beyond current position (actually makes progress)
+            const canUse = (r.start <= cp + ROUTE_OVERLAP_TOLERANCE) && (r.end > cp);
+
+            if (canUse) {
+                // Prevent using the same segment twice
+                let alreadyUsed = false;
+                for (let j = 0; j < path.length; j++) {
+                    if (path[j].start === r.start && path[j].end === r.end) {
+                        alreadyUsed = true;
+                        break;
+                    }
+                }
+                if (!alreadyUsed) {
+                    opts.push(r);
+                    if (opts.length >= MAX_OPTS_PER_NODE) break;
+                }
+            }
+        }
+
+        for (let i = 0; i < opts.length && allPaths.length < MAX_PATHWAYS; i++) {
+            const r = opts[i];
+            const newPath = path.slice();
+            newPath.push(r);
+            // V6.2: Update current position to the furthest point reached
+            queue.push({ cp: Math.max(cp, r.end), path: newPath });
+        }
+    }
+
+    const pathScore = function(p) {
+        let score = 0;
+        for (let i = 0; i < p.length; i++) score += segmentWeight(p[i]);
+        return score;
+    };
+
+    const pathLengthVariance = function(p) {
+        if (!p || p.length <= 1) return 0;
+        let mean = 0;
+        for (let i = 0; i < p.length; i++) mean += safeNum(p[i].length);
+        mean = mean / p.length;
+        let v = 0;
+        for (let i = 0; i < p.length; i++) {
+            const d = safeNum(p[i].length) - mean;
+            v += d * d;
+        }
+        return v / p.length;
+    };
+
+    const pathKey = function(p) {
+        return p.map(function(r) { return r.start + "_" + r.end; }).join("|");
+    };
+
+    // Sort: fewer segments first, then higher reliability, then lower variance
+    allPaths.sort(function(a, b) {
+        if (a.length !== b.length) return a.length - b.length;
+        const sa = pathScore(a);
+        const sb = pathScore(b);
+        if (sb !== sa) return sb - sa;
+        const va = pathLengthVariance(a);
+        const vb = pathLengthVariance(b);
+        if (va !== vb) return va - vb;
+        return pathKey(a).localeCompare(pathKey(b));
+    });
+
+    // V6.2: Filter to only valid completion routes using proper coverage check
+    const completionRoutes = [];
+    for (let i = 0; i < allPaths.length; i++) {
+        const p = allPaths[i];
+        if (p.length > 0 && pathCoversFullLevel(p)) {
+            completionRoutes.push(p);
+        }
+    }
+
+    // Deduplicate for UI
+    const seen = new Set();
+    const uniquePaths = [];
+    for (let i = 0; i < completionRoutes.length; i++) {
+        const p = completionRoutes[i];
+        const s = pathKey(p);
+        if (!seen.has(s)) {
+            seen.add(s);
+            uniquePaths.push(p);
+        }
+    }
+
+    const formattedPaths = uniquePaths.map(function(p) {
+        return {
+            segments: p.length,
+            totalLength: p.reduce(function(sum, r) { return sum + r.length; }, 0),
+            start: 0, end: 100,
+            route: p.map(function(r) { return r.start + "-" + r.end + "%"; }),
+            runs: p
+        };
+    }).sort(function(a, b) {
+        if (a.segments !== b.segments) return a.segments - b.segments;
+        const sa = pathScore(a.runs);
+        const sb = pathScore(b.runs);
+        if (sb !== sa) return sb - sa;
+        const va = pathLengthVariance(a.runs);
+        const vb = pathLengthVariance(b.runs);
+        if (va !== vb) return va - vb;
+        return pathKey(a.runs).localeCompare(pathKey(b.runs));
+    });
+
+    const byLen = {};
+    let total = 0;
+    for (let i = 0; i < uniquePaths.length; i++) {
+        const p = uniquePaths[i];
+        const l = p.length;
+        total += l;
+        if (!byLen[l]) byLen[l] = [];
+        byLen[l].push(p);
+    }
+
+    return {
+        filteredPaths: formattedPaths,
+        pathsByLength: byLen,
+        totalPathLengths: total,
+        allPaths: uniquePaths,
+        totalCompletionRoutes: completionRoutes.length,
+        totalPathCount: completionRoutes.length
+    };
+}
+
+// ============================================================================
+// CONSISTENCY
+// ============================================================================
+
+function calculateSegmentConsistency(start, end, from0Freq, completions) {
+    let reachedStart = 0, reachedEnd = 0;
+    const keys = Object.keys(from0Freq);
+    for (let i = 0; i < keys.length; i++) {
+        const p = parseInt(keys[i], 10);
+        const count = from0Freq[keys[i]];
+        if (p >= start) reachedStart += count;
+        if (p >= end) reachedEnd += count;
+    }
+    if (end === 100) {
+        reachedStart += completions;
+        reachedEnd += completions;
+    }
+    let total = 0;
+    const values = Object.values(from0Freq);
+    for (let i = 0; i < values.length; i++) total += values[i];
+    total += completions;
+    if (total < MIN_SEGMENT_SAMPLES) return { passRate: null, sampleWeight: total, reliable: false };
+    if (reachedStart === 0) return { passRate: null, sampleWeight: 0, reliable: false };
+    if (reachedStart < MIN_SEGMENT_SAMPLES) return { passRate: null, sampleWeight: reachedStart, reliable: false };
+    return { passRate: Math.min(100, (reachedEnd / reachedStart) * 100), sampleWeight: reachedStart, reliable: true };
+}
+
+function renderSegmentConsistency(actualRuns, from0Freq, completions) {
+    const segmentData = [];
+    const openingPressure = analyzeOpeningPressure(from0Freq);
+    for (let b = 0; b < 10; b++) {
+        const start = b * 10, end = (b + 1) * 10;
+        const r = calculateSegmentConsistency(start, end, from0Freq, completions);
+        let hasCoverage = false;
+        for (let i = 0; i < actualRuns.length; i++) {
+            const x = actualRuns[i];
+            if (x.start <= start && x.end >= end) { hasCoverage = true; break; }
+        }
+        if (r.passRate !== null) {
+            segmentData.push({ start, end, passRate: r.passRate, sampleWeight: r.sampleWeight, reliable: r.reliable, hasCoverage });
+        } else if (hasCoverage) {
+            segmentData.push({ start, end, passRate: null, sampleWeight: 0, reliable: false, hasCoverage, note: "Startpos only" });
+        }
+    }
+    let worst = null;
+    if (segmentData.length > 0) {
+        const reliable = [];
+        for (let i = 0; i < segmentData.length; i++) {
+            if (segmentData[i].reliable && segmentData[i].passRate !== null) reliable.push(segmentData[i]);
+        }
+        if (reliable.length > 0) {
+            worst = reliable[0];
+            for (let i = 1; i < reliable.length; i++) {
+                const candidateRate = reliable[i].passRate + (reliable[i].start === 0 && openingPressure.isolated ? 18 : 0);
+                const worstRate = worst.passRate + (worst.start === 0 && openingPressure.isolated ? 18 : 0);
+                if (candidateRate < worstRate) worst = reliable[i];
+            }
+        } else {
+            const withRate = [];
+            for (let i = 0; i < segmentData.length; i++) {
+                if (segmentData[i].passRate !== null) withRate.push(segmentData[i]);
+            }
+            if (withRate.length > 0) {
+                worst = withRate[0];
+                for (let i = 1; i < withRate.length; i++) {
+                    const candidateRate = withRate[i].passRate + (withRate[i].start === 0 && openingPressure.isolated ? 18 : 0);
+                    const worstRate = worst.passRate + (worst.start === 0 && openingPressure.isolated ? 18 : 0);
+                    if (candidateRate < worstRate) worst = withRate[i];
+                }
+            } else {
+                worst = segmentData[0];
+            }
+        }
+    }
+    return { segmentData, worst };
+}
+
+// ============================================================================
+// DEATH DISTRIBUTION
+// ============================================================================
+
+function calculateDeathDistribution(from0Freq) {
+    const total = Object.values(from0Freq).reduce(function(a, b) { return a + b; }, 0);
+    if (total === 0) return [];
+    const uniform = 100 / 20;
+    const dist = [];
+    const openingPressure = analyzeOpeningPressure(from0Freq);
+    for (let i = 0; i < 20; i++) {
+        const start = i * 5, end = (i + 1) * 5;
+        let deaths = 0;
+        const keys = Object.keys(from0Freq);
+        for (let j = 0; j < keys.length; j++) {
+            const p = parseInt(keys[j], 10);
+            const c = from0Freq[keys[j]];
+            if (p >= start && p < end) deaths += c;
+        }
+        if (deaths > 0) {
+            const pct = (deaths / total) * 100;
+            let risk;
+            if (pct > uniform * 2.5) risk = "critical";
+            else if (pct > uniform * 1.5) risk = "high";
+            else if (pct > uniform) risk = "medium";
+            else risk = "low";
+            const priority = getWallPriority(start, deaths, calculateDeathSeverity((start + end) / 2), openingPressure);
+            dist.push({
+                segment: start + "-" + end, start, end, deaths,
+                percentage: pct.toFixed(1), riskLevel: risk,
+                wallPriority: priority.toFixed(3),
+                zoneType: start < OPENING_END_PERCENT && openingPressure.isolated ? "opening-input" : start < OPENING_FOLLOW_END_PERCENT ? "early" : start >= 70 ? "late" : "main"
+            });
+        }
+    }
+    return dist.sort(function(a, b) { return parseFloat(b.wallPriority) - parseFloat(a.wallPriority); });
+}
+
+
+// ============================================================================
+// READINESS
+// ============================================================================
+
+function getTier(v) {
+    if (v >= 95) return "S";
+    if (v >= 85) return "A+";
+    if (v >= 75) return "A";
+    if (v >= 65) return "B+";
+    if (v >= 55) return "B";
+    if (v >= 40) return "C";
+    if (v >= 25) return "D";
+    return "F";
+}
+
+function calculateRouteProofScore(actualRuns) {
+    let endgameUnits = 0;
+    let longestToEnd = 0;
+    let bestLateStart = 100;
+    let midToEnd = 0;
+
+    for (let i = 0; i < (actualRuns || []).length; i++) {
+        const r = actualRuns[i];
+        if (!r || r.end < 100) continue;
+        const length = Math.max(0, safeNum(r.length || (r.end - r.start)));
+        const count = Math.max(1, safeNum(r.count || 1));
+        const start = safeNum(r.start);
+
+        longestToEnd = Math.max(longestToEnd, length);
+        bestLateStart = Math.min(bestLateStart, start);
+
+        if (start >= 70) endgameUnits += length * count * 1.15;
+        else if (start >= 45) {
+            midToEnd += count;
+            endgameUnits += length * count * 1.35;
+        } else {
+            midToEnd += count;
+            endgameUnits += length * count * 1.6;
+        }
+    }
+
+    const volumeScore = Math.min(45, endgameUnits / 8);
+    const lengthScore = Math.min(35, longestToEnd * 0.7);
+    const startScore = bestLateStart < 100 ? Math.min(20, (100 - bestLateStart) * 0.28) : 0;
+    const midBonus = Math.min(10, midToEnd * 2);
+    return clamp(volumeScore + lengthScore + startScore + midBonus, 0, 100);
+}
+
+function calculateGDProgressScore(bestFrom0, routeProofScore, coverage, completions) {
+    const best = safeNum(bestFrom0);
+    const bestScore = best >= 95 ? 96 : best >= 90 ? 90 : best >= 80 ? 78 : best >= 70 ? 68 : best >= 60 ? 58 : best * 0.9;
+    const proofLift = Math.min(18, safeNum(routeProofScore) * 0.18);
+    const coverageLift = Math.min(8, safeNum(coverage) * 0.08);
+    const clearLift = safeNum(completions) > 0 ? 10 : 0;
+    return clamp(bestScore + proofLift + coverageLift + clearLift, 0, 100);
+}
+
 function calculateReadiness(buildResult, attemptStats, explicitBeats, skillScoreResult) {
     const bestFrom0 = buildResult.bestFrom0;
     const actualRuns = buildResult.actualRuns;
@@ -922,9 +1223,9 @@ function calculateReadiness(buildResult, attemptStats, explicitBeats, skillScore
 
     return {
         readiness: readiness * 100,
-        skillTier: skillTier,
-        consistencyTier: consistencyTier,
-        nervesTier: nervesTier,
+        skillTier,
+        consistencyTier,
+        nervesTier,
         breakdown: {
             skill: (skillScore / READINESS_SKILL_WEIGHT * 100).toFixed(1),
             consistency: segCount > 0 ? avgCons.toFixed(1) : "N/A",
@@ -935,6 +1236,11 @@ function calculateReadiness(buildResult, attemptStats, explicitBeats, skillScore
         }
     };
 }
+
+// ============================================================================
+// REALISTIC ATTEMPT PREDICTION
+// ============================================================================
+
 function calculateRealisticAttempts(buildResult, percentiles, difficultyMultiplier) {
     const bestFrom0 = buildResult.bestFrom0;
     const from0Freq = buildResult.from0Freq;
@@ -980,6 +1286,11 @@ function calculateRealisticAttempts(buildResult, percentiles, difficultyMultipli
 
     return Math.max(10, Math.round(finalEstimate));
 }
+
+// ============================================================================
+// PASS RATE ANALYSIS
+// ============================================================================
+
 function calculatePassRateByChunks(from0Freq, completions) {
     const chunks = [];
     for (let chunk = 0; chunk < 10; chunk++) {
@@ -1003,16 +1314,17 @@ function calculatePassRateByChunks(from0Freq, completions) {
         else if (passRate >= 30) color = 'medium';
         else color = 'high';
         chunks.push({
-            chunk: start + "-" + end + "%",
-            start: start,
-            end: end,
-            passRate: Math.max(0, passRate),
-            deaths: deathsInChunk,
-            color: color
+            chunk: start + "-" + end + "%", start, end,
+            passRate: Math.max(0, passRate), deaths: deathsInChunk, color
         });
     }
     return chunks;
 }
+
+// ============================================================================
+// OVERALL GRADING
+// ============================================================================
+
 function calculateOverallGrade(skillScore, consistencyIndex, readiness, bestFrom0, completions, routeProofScore, coverage) {
     const progressScore = calculateGDProgressScore(bestFrom0, routeProofScore, coverage, completions);
     const gradeScore = (progressScore * 0.35) + (readiness * 0.25) + (consistencyIndex * 0.20) + (skillScore * 0.15) + (safeNum(routeProofScore) * 0.05);
@@ -1024,7 +1336,7 @@ function calculateOverallGrade(skillScore, consistencyIndex, readiness, bestFrom
     else if (gradeScore >= 35) tier = 'D';
 
     return {
-        tier: tier,
+        tier,
         score: gradeScore.toFixed(1),
         breakdown: {
             skillComponent: (skillScore * 0.15).toFixed(1),
@@ -1035,6 +1347,11 @@ function calculateOverallGrade(skillScore, consistencyIndex, readiness, bestFrom
         }
     };
 }
+
+// ============================================================================
+// NERVE CHART
+// ============================================================================
+
 function calculateNerveChart(from0Freq, percentiles, bestFrom0) {
     const chartPoints = [];
     const maxDeathsAtAnyPercent = Math.max(...Object.values(from0Freq || {}), 1);
@@ -1049,14 +1366,16 @@ function calculateNerveChart(from0Freq, percentiles, bestFrom0) {
         else if (nerveScore > 30) riskZone = 'MEDIUM';
         else riskZone = 'LOW';
         chartPoints.push({
-            percent: pct,
-            nerveScore: nerveScore.toFixed(1),
-            riskZone: riskZone,
-            deaths: deathsAtPercent
+            percent: pct, nerveScore: nerveScore.toFixed(1), riskZone, deaths: deathsAtPercent
         });
     }
     return chartPoints;
 }
+
+// ============================================================================
+// SEGMENT RELIABILITY
+// ============================================================================
+
 function calculateSegmentReliability(actualRuns, from0Freq, completions) {
     const reliabilityMap = {};
     for (let i = 0; i < actualRuns.length; i++) {
@@ -1075,69 +1394,21 @@ function calculateSegmentReliability(actualRuns, from0Freq, completions) {
         else if (reliability >= 60) tier = 'MEDIUM';
         else tier = 'LOW';
         reliabilityMap[segment] = {
-            segment: segment,
-            start: run.start,
-            end: run.end,
+            segment, start: run.start, end: run.end,
             attempts: run.count,
             successfulAttempts: Math.max(0, run.count - deathsInSegment),
-            reliability: Math.max(0, reliability).toFixed(1),
-            tier: tier
+            reliability: Math.max(0, reliability).toFixed(1), tier
         };
     }
     const values = Object.values(reliabilityMap);
     values.sort(function(a, b) { return parseFloat(b.reliability) - parseFloat(a.reliability); });
     return values;
 }
-function calculateRouteProofScore(actualRuns) {
-    let endgameUnits = 0;
-    let longestToEnd = 0;
-    let bestLateStart = 100;
-    let midToEnd = 0;
 
-    for (let i = 0; i < (actualRuns || []).length; i++) {
-        const r = actualRuns[i];
-        if (!r || r.end < 100) continue;
-        const length = Math.max(0, safeNum(r.length || (r.end - r.start)));
-        const count = Math.max(1, safeNum(r.count || 1));
-        const start = safeNum(r.start);
+// ============================================================================
+// FORECAST
+// ============================================================================
 
-        longestToEnd = Math.max(longestToEnd, length);
-        bestLateStart = Math.min(bestLateStart, start);
-
-        if (start >= 70) endgameUnits += length * count * 1.15;
-        else if (start >= 45) {
-            midToEnd += count;
-            endgameUnits += length * count * 1.35;
-        } else {
-            midToEnd += count;
-            endgameUnits += length * count * 1.6;
-        }
-    }
-
-    const volumeScore = Math.min(45, endgameUnits / 8);
-    const lengthScore = Math.min(35, longestToEnd * 0.7);
-    const startScore = bestLateStart < 100 ? Math.min(20, (100 - bestLateStart) * 0.28) : 0;
-    const midBonus = Math.min(10, midToEnd * 2);
-    return clamp(volumeScore + lengthScore + startScore + midBonus, 0, 100);
-}
-function calculateGDProgressScore(bestFrom0, routeProofScore, coverage, completions) {
-    const best = safeNum(bestFrom0);
-    const bestScore = best >= 95 ? 96 : best >= 90 ? 90 : best >= 80 ? 78 : best >= 70 ? 68 : best >= 60 ? 58 : best * 0.9;
-    const proofLift = Math.min(18, safeNum(routeProofScore) * 0.18);
-    const coverageLift = Math.min(8, safeNum(coverage) * 0.08);
-    const clearLift = safeNum(completions) > 0 ? 10 : 0;
-    return clamp(bestScore + proofLift + coverageLift + clearLift, 0, 100);
-}
-function getTier(v) {
-    if (v >= 95) return "S";
-    if (v >= 85) return "A+";
-    if (v >= 75) return "A";
-    if (v >= 65) return "B+";
-    if (v >= 55) return "B";
-    if (v >= 40) return "C";
-    if (v >= 25) return "D";
-    return "F";
-}
 function calculateForecast(buildResult, readinessResult, attemptStats, percentiles, difficultyMultiplier) {
     const bestFrom0 = buildResult.bestFrom0;
     const readiness = safeNum(readinessResult.readiness);
@@ -1184,6 +1455,12 @@ function calculateForecast(buildResult, readinessResult, attemptStats, percentil
         note: remaining <= 5 ? "Very close! Focus on your choke point." : "Rough estimate — trust skill/consistency metrics more."
     };
 }
+
+
+// ============================================================================
+// COACH SUGGESTIONS
+// ============================================================================
+
 function generateCoachSuggestions(buildResult, consistencyResult, readinessResult, coverageResult, percentiles) {
     const bestFrom0 = buildResult.bestFrom0;
     const actualRunsSorted = buildResult.actualRunsSorted;
@@ -1198,15 +1475,8 @@ function generateCoachSuggestions(buildResult, consistencyResult, readinessResul
     const routeProof = safeNum(readinessResult.breakdown?.routeProof);
 
     const s = {
-        nextAction: "",
-        biggestGap: "",
-        bestRoute: "",
-        strongAreas: "",
-        todayFocus: "",
-        warnings: [],
-        actionItems: [],
-        mentalGame: "",
-        grindSpot: ""
+        nextAction: "", biggestGap: "", bestRoute: "", strongAreas: "",
+        todayFocus: "", warnings: [], actionItems: [], mentalGame: "", grindSpot: ""
     };
 
     if (bestFrom0 >= 70) {
@@ -1325,6 +1595,11 @@ function generateCoachSuggestions(buildResult, consistencyResult, readinessResul
 
     return s;
 }
+
+// ============================================================================
+// RADAR CHART DATA
+// ============================================================================
+
 function buildRadarData(skillScoreResult, readinessResult, coverageResult, buildResult) {
     const skill = Math.round(safeNum(skillScoreResult.score));
     const consistency = Math.round(safeNum(skillScoreResult.percentiles.consistencyIndex));
@@ -1336,197 +1611,9 @@ function buildRadarData(skillScoreResult, readinessResult, coverageResult, build
     return {
         labels: ["Skill", "Consistency", "Nerves", "Coverage", "Endurance", "Readiness"],
         values: [skill, consistency, nerves, coverage, endurance, readiness],
-        raw: { skill: skill, consistency: consistency, nerves: nerves, coverage: coverage, endurance: endurance, readiness: readiness }
+        raw: { skill, consistency, nerves, coverage, endurance, readiness }
     };
 }
-
-// ============================================================================
-// PRACTICE MAP — Uses ONLY startpos runs (not from0 deaths)
-// ============================================================================
-
-function calculateSegmentConsistency(start, end, from0Freq, completions, startposRuns) {
-    // For practice map: use startpos runs to determine coverage
-    let reachedStart = 0, reachedEnd = 0;
-
-    // Count startpos runs that cover this segment
-    for (let i = 0; i < (startposRuns || []).length; i++) {
-        const r = startposRuns[i];
-        if (r.start <= start && r.end >= start) reachedStart += r.count;
-        if (r.start <= end && r.end >= end) reachedEnd += r.count;
-    }
-
-    // Also count from0 deaths that reached start
-    const keys = Object.keys(from0Freq || {});
-    for (let i = 0; i < keys.length; i++) {
-        const p = parseInt(keys[i], 10);
-        const count = from0Freq[keys[i]];
-        if (p >= start) reachedStart += count;
-        if (p >= end) reachedEnd += count;
-    }
-
-    if (end === 100) {
-        reachedStart += completions;
-        reachedEnd += completions;
-    }
-
-    let total = 0;
-    const values = Object.values(from0Freq || {});
-    for (let i = 0; i < values.length; i++) total += values[i];
-    total += completions;
-
-    // Add startpos attempts to total for sample weight
-    let startposTotal = 0;
-    for (let i = 0; i < (startposRuns || []).length; i++) {
-        startposTotal += startposRuns[i].count;
-    }
-    total += startposTotal;
-
-    if (total < MIN_SEGMENT_SAMPLES) return { passRate: null, sampleWeight: total, reliable: false };
-    if (reachedStart === 0) return { passRate: null, sampleWeight: 0, reliable: false };
-    if (reachedStart < MIN_SEGMENT_SAMPLES) return { passRate: null, sampleWeight: reachedStart, reliable: false };
-    return { passRate: Math.min(100, (reachedEnd / reachedStart) * 100), sampleWeight: reachedStart, reliable: true };
-}
-
-function renderSegmentConsistency(actualRuns, from0Freq, completions, startposRuns) {
-    const segmentData = [];
-    const openingPressure = analyzeOpeningPressure(from0Freq);
-
-    for (let b = 0; b < 10; b++) {
-        const start = b * 10, end = (b + 1) * 10;
-
-        // Check if segment has startpos coverage
-        let hasCoverage = false;
-        for (let i = 0; i < (startposRuns || []).length; i++) {
-            const r = startposRuns[i];
-            if (r.start <= start && r.end >= end) { hasCoverage = true; break; }
-        }
-
-        // Also check from0 deaths in this range
-        let hasFrom0Data = false;
-        const keys = Object.keys(from0Freq || {});
-        for (let i = 0; i < keys.length; i++) {
-            const p = parseInt(keys[i], 10);
-            if (p >= start && p < end) { hasFrom0Data = true; break; }
-        }
-
-        const r = calculateSegmentConsistency(start, end, from0Freq, completions, startposRuns);
-
-        if (r.passRate !== null) {
-            segmentData.push({ 
-                start: start, end: end, passRate: r.passRate, 
-                sampleWeight: r.sampleWeight, reliable: r.reliable, hasCoverage: hasCoverage 
-            });
-        } else if (hasCoverage || hasFrom0Data) {
-            segmentData.push({ 
-                start: start, end: end, passRate: null, sampleWeight: 0, 
-                reliable: false, hasCoverage: hasCoverage, note: hasCoverage ? "Startpos only" : "From0 only" 
-            });
-        }
-    }
-
-    let worst = null;
-    if (segmentData.length > 0) {
-        const reliable = segmentData.filter(function(s) { return s.reliable && s.passRate !== null; });
-        if (reliable.length > 0) {
-            worst = reliable[0];
-            for (let i = 1; i < reliable.length; i++) {
-                const candidateRate = reliable[i].passRate + (reliable[i].start === 0 && openingPressure.isolated ? 18 : 0);
-                const worstRate = worst.passRate + (worst.start === 0 && openingPressure.isolated ? 18 : 0);
-                if (candidateRate < worstRate) worst = reliable[i];
-            }
-        } else {
-            const withRate = segmentData.filter(function(s) { return s.passRate !== null; });
-            if (withRate.length > 0) {
-                worst = withRate[0];
-                for (let i = 1; i < withRate.length; i++) {
-                    const candidateRate = withRate[i].passRate + (withRate[i].start === 0 && openingPressure.isolated ? 18 : 0);
-                    const worstRate = worst.passRate + (worst.start === 0 && openingPressure.isolated ? 18 : 0);
-                    if (candidateRate < worstRate) worst = withRate[i];
-                }
-            } else {
-                worst = segmentData[0];
-            }
-        }
-    }
-    return { segmentData: segmentData, worst: worst };
-}
-
-// ============================================================================
-// DEATH DISTRIBUTION — Uses from0Freq (from0 deaths only)
-// ============================================================================
-
-function calculateDeathDistribution(from0Freq) {
-    const total = Object.values(from0Freq || {}).reduce(function(a, b) { return a + b; }, 0);
-    if (total === 0) return [];
-    const uniform = 100 / 20;
-    const dist = [];
-    const openingPressure = analyzeOpeningPressure(from0Freq);
-
-    for (let i = 0; i < 20; i++) {
-        const start = i * 5, end = (i + 1) * 5;
-        let deaths = 0;
-        const keys = Object.keys(from0Freq || {});
-        for (let j = 0; j < keys.length; j++) {
-            const p = parseInt(keys[j], 10);
-            const c = from0Freq[keys[j]];
-            if (p >= start && p < end) deaths += c;
-        }
-        if (deaths > 0) {
-            const pct = (deaths / total) * 100;
-            let risk;
-            if (pct > uniform * 2.5) risk = "critical";
-            else if (pct > uniform * 1.5) risk = "high";
-            else if (pct > uniform) risk = "medium";
-            else risk = "low";
-            const priority = getWallPriority(start, deaths, calculateDeathSeverity((start + end) / 2), openingPressure);
-            dist.push({
-                segment: start + "-" + end,
-                start: start,
-                end: end,
-                deaths: deaths,
-                percentage: pct.toFixed(1),
-                riskLevel: risk,
-                wallPriority: priority.toFixed(3),
-                zoneType: start < OPENING_END_PERCENT && openingPressure.isolated ? "opening-input" : start < OPENING_FOLLOW_END_PERCENT ? "early" : start >= 70 ? "late" : "main"
-            });
-        }
-    }
-    return dist.sort(function(a, b) { return parseFloat(b.wallPriority) - parseFloat(a.wallPriority); });
-}
-
-// ============================================================================
-// COVERAGE — Uses ALL runs (startpos + from0 + completions)
-// ============================================================================
-
-function calculateCoverage(actualRuns) {
-    if (!actualRuns || actualRuns.length === 0) {
-        return { practice: 0, merged: [], gaps: [{ start: 0, end: 100 }] };
-    }
-    const intervals = actualRuns.map(function(r) { return [r.start, r.end]; }).sort(function(a, b) { return a[0] - b[0]; });
-    const merged = [];
-    let cur = [intervals[0][0], intervals[0][1]];
-    for (let i = 1; i < intervals.length; i++) {
-        if (intervals[i][0] <= cur[1]) {
-            cur[1] = Math.max(cur[1], intervals[i][1]);
-        } else {
-            merged.push([cur[0], cur[1]]);
-            cur = [intervals[i][0], intervals[i][1]];
-        }
-    }
-    merged.push([cur[0], cur[1]]);
-    let total = 0;
-    for (let i = 0; i < merged.length; i++) {
-        total += (merged[i][1] - merged[i][0]);
-    }
-    const gaps = [];
-    if (merged[0][0] > 0) gaps.push({ start: 0, end: merged[0][0] });
-    for (let i = 1; i < merged.length; i++) {
-        if (merged[i][0] > merged[i-1][1]) gaps.push({ start: merged[i-1][1], end: merged[i][0] });
-    }
-    if (merged[merged.length-1][1] < 100) gaps.push({ start: merged[merged.length-1][1], end: 100 });
-    return { practice: Math.min(100, total), merged: merged, gaps: gaps };
-}
-
 
 // ============================================================================
 // MAIN ANALYSIS
@@ -1543,6 +1630,7 @@ function analyzeInput(inputText, difficultyMultiplier, options) {
     if (warnings.length > 0 && debug) console.warn("Validation:", warnings);
 
     let processedText = inputText.replace(/\r\n/g, '\n');
+
     const sectionLabelRegex = /(?:^|\s)(runs?|from\s*0|from0|startpos(?:\s+runs)?)\s*:/gi;
 
     if (sectionLabelRegex.test(processedText)) {
@@ -1585,27 +1673,18 @@ function analyzeInput(inputText, difficultyMultiplier, options) {
     const attemptStats = computeAttemptTotals(entries);
     const buildResult = buildRuns(entries);
     const rawAttemptCount = countRawAttemptsFromText(inputText);
-
-    // Use startposRuns for practice map, actualRuns for coverage
-    const startposRuns = buildResult.startposRuns;
-    const actualRuns = buildResult.actualRuns;
-    const from0Freq = buildResult.from0Freq;
-    const bestFrom0 = buildResult.bestFrom0;
-    const completions = buildResult.completions;
-
-    const percentiles = calculateFrom0Percentiles(from0Freq, completions);
+    const percentiles = calculateFrom0Percentiles(buildResult.from0Freq, buildResult.completions);
     const skillScoreResult = calculateSkillScore(percentiles);
-    const coverageResult = calculateCoverage(actualRuns);
-    const engineMode = detectMode(completions, attemptStats.totalAttempts, bestFrom0, actualRuns, attemptStats.totalFrom0Attempts, percentiles);
-    const consistencyResult = renderSegmentConsistency(actualRuns, from0Freq, completions, startposRuns);
+    const coverageResult = calculateCoverage(buildResult.actualRuns);
+    const engineMode = detectMode(buildResult.completions, attemptStats.totalAttempts, buildResult.bestFrom0, buildResult.actualRuns, attemptStats.totalFrom0Attempts, percentiles);
+    const consistencyResult = renderSegmentConsistency(buildResult.actualRuns, buildResult.from0Freq, buildResult.completions);
     const readinessResult = calculateReadiness(buildResult, attemptStats, explicitBeats, skillScoreResult);
     const forecastResult = calculateForecast(buildResult, readinessResult, attemptStats, percentiles, difficultyMultiplier);
     const coachSuggestions = generateCoachSuggestions(buildResult, consistencyResult, readinessResult, coverageResult, percentiles);
-    const deathDistribution = calculateDeathDistribution(from0Freq);
-
+    const deathDistribution = calculateDeathDistribution(buildResult.from0Freq);
     let pathResult = null;
     try {
-        pathResult = analyzePaths(actualRuns, bestFrom0);
+        pathResult = analyzePaths(buildResult.actualRuns, buildResult.bestFrom0);
     } catch(e) {
         pathResult = { filteredPaths: [], pathsByLength: {}, totalPathLengths: 0, allPaths: [], totalCompletionRoutes: 0, totalPathCount: 0 };
     }
@@ -1619,23 +1698,23 @@ function analyzeInput(inputText, difficultyMultiplier, options) {
         else if (avg <= 4) routeReliability = "Medium";
     }
 
-    const passRateChunks = calculatePassRateByChunks(from0Freq, completions);
+    const passRateChunks = calculatePassRateByChunks(buildResult.from0Freq, buildResult.completions);
     const enhancedAttempts = calculateRealisticAttempts(buildResult, percentiles, difficultyMultiplier);
-    const routeProofScore = safeNum(readinessResult.breakdown?.routeProof);
+    const routeProofScore = safeNum(readinessResult.breakdown.routeProof);
     const overallGrade = calculateOverallGrade(
-        safeNum(skillScoreResult.score),
-        percentiles.consistencyIndex,
-        safeNum(readinessResult.readiness),
-        bestFrom0,
-        completions,
-        routeProofScore,
-        coverageResult.practice
+        safeNum(skillScoreResult.score), percentiles.consistencyIndex,
+        safeNum(readinessResult.readiness), buildResult.bestFrom0,
+        buildResult.completions, routeProofScore, coverageResult.practice
     );
-    const nerveChart = calculateNerveChart(from0Freq, percentiles, bestFrom0);
-    const segmentReliability = calculateSegmentReliability(actualRuns, from0Freq, completions);
+    const nerveChart = calculateNerveChart(buildResult.from0Freq, percentiles, buildResult.bestFrom0);
+    const segmentReliability = calculateSegmentReliability(buildResult.actualRuns, buildResult.from0Freq, buildResult.completions);
 
-    // bestRuns/longestRuns/stableRuns: ONLY startpos runs (type="run")
-    const runsToShow = startposRuns.length > 0 ? startposRuns : actualRuns.filter(function(r) {
+    // bestRuns/longestRuns/stableRuns should ONLY be startpos runs (type="run")
+    const startposRuns = [];
+    for (let i = 0; i < buildResult.actualRuns.length; i++) {
+        if (buildResult.actualRuns[i].type === "run") startposRuns.push(buildResult.actualRuns[i]);
+    }
+    const runsToShow = startposRuns.length > 0 ? startposRuns : buildResult.actualRuns.filter(function(r) {
         return r.type !== "completion";
     });
 
@@ -1646,14 +1725,14 @@ function analyzeInput(inputText, difficultyMultiplier, options) {
 
     const summary = {
         totalAttempts: attemptStats.totalAttempts,
-        rawAttemptCount: rawAttemptCount,
-        bestFrom0: bestFrom0,
+        rawAttemptCount,
+        bestFrom0: buildResult.bestFrom0,
         practiceCoverage: coverageResult.practice,
-        from0Coverage: bestFrom0,
+        from0Coverage: buildResult.bestFrom0,
         readiness: readinessResult.readiness,
-        completions: completions,
+        completions: buildResult.completions,
         mode: engineMode,
-        routeReliability: routeReliability,
+        routeReliability,
         worstSegment: consistencyResult.worst ? consistencyResult.worst.start + "-" + consistencyResult.worst.end + "%" : "None",
         estimatedAttempts: forecastResult.estimatedAttempts,
         deathHotspot: deathDistribution.length > 0 ? deathDistribution[0].segment : "None"
@@ -1667,33 +1746,27 @@ function analyzeInput(inputText, difficultyMultiplier, options) {
         bestRoute: pathResult.filteredPaths[0] || null
     };
 
-    const hasData = attemptStats.totalAttempts > 0 || bestFrom0 > 0;
+    const hasData = attemptStats.totalAttempts > 0 || buildResult.bestFrom0 > 0;
 
     const result = {
-        hasData: hasData,
+        hasData,
         totalAttempts: attemptStats.totalAttempts,
-        bestFrom0: bestFrom0,
+        bestFrom0: buildResult.bestFrom0,
         mode: engineMode,
-        routeReliability: routeReliability,
+        routeReliability,
         estimatedAttempts: forecastResult.estimatedAttempts,
-        summary: summary,
-        dashboardCards: dashboardCards,
-        radarData: radarData,
-        rawAttemptCount: rawAttemptCount,
+        summary,
+        dashboardCards,
+        radarData,
+        rawAttemptCount,
         from0Attempts: attemptStats.totalFrom0Attempts,
         from0Deaths: attemptStats.from0Deaths,
         startposAttempts: attemptStats.startposAttempts,
         percentiles: {
-            p10: percentiles.p10,
-            p25: percentiles.p25,
-            p50: percentiles.p50,
-            p75: percentiles.p75,
-            p90: percentiles.p90,
-            best: percentiles.best,
-            mean: percentiles.mean.toFixed(1),
-            stdDev: percentiles.stdDev.toFixed(1),
-            consistencyIndex: percentiles.consistencyIndex.toFixed(1),
-            attempts: percentiles.attempts
+            p10: percentiles.p10, p25: percentiles.p25, p50: percentiles.p50,
+            p75: percentiles.p75, p90: percentiles.p90, best: percentiles.best,
+            mean: percentiles.mean.toFixed(1), stdDev: percentiles.stdDev.toFixed(1),
+            consistencyIndex: percentiles.consistencyIndex.toFixed(1), attempts: percentiles.attempts
         },
         practiceCoverage: coverageResult.practice,
         coverageGaps: coverageResult.gaps,
@@ -1709,30 +1782,29 @@ function analyzeInput(inputText, difficultyMultiplier, options) {
         totalRoutes: pathResult.totalPathCount || pathResult.totalCompletionRoutes,
         routePaths: pathResult.pathsByLength,
         routeSegments: pathResult.filteredPaths.length > 0 ? pathResult.filteredPaths[0].segments : 0,
-        bestRuns: bestRuns,
+        bestRuns,
         bestRunsAll: getBestRuns(runsToShow, 100),
-        longestRuns: longestRuns,
+        longestRuns,
         longestRunsAll: getLongestRuns(runsToShow, 100),
-        stableRuns: stableRuns,
+        stableRuns,
         stableRunsAll: getStableRuns(runsToShow, 100),
-        deathDistribution: deathDistribution,
-        from0Freq: from0Freq,
+        deathDistribution,
+        from0Freq: buildResult.from0Freq,
         confidenceInterval: forecastResult.confidenceInterval,
         volatility: forecastResult.volatility,
         forecastNote: forecastResult.note,
-        coachSuggestions: coachSuggestions,
+        coachSuggestions,
         passRateByChunks: passRateChunks,
-        enhancedAttempts: enhancedAttempts,
-        overallGrade: overallGrade,
-        nerveChart: nerveChart,
-        segmentReliability: segmentReliability,
+        enhancedAttempts,
+        overallGrade,
+        nerveChart,
+        segmentReliability,
         validationWarnings: warnings,
-        sessionId: sessionId,
+        sessionId,
         skillScore: skillScoreResult.score,
         analyzedAt: new Date().toISOString()
     };
 
-    // Augment with V7 metrics
     return augmentResult(result, options);
 }
 
@@ -1742,23 +1814,11 @@ function analyzeInput(inputText, difficultyMultiplier, options) {
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
-        analyzeInput: analyzeInput,
-        parseMetricsLine: parseMetricsLine,
-        buildRuns: buildRuns,
-        analyzePaths: analyzePaths,
-        calculateReadiness: calculateReadiness,
-        generateCoachSuggestions: generateCoachSuggestions,
-        validateInput: validateInput,
-        calculateCoverage: calculateCoverage,
-        calculateDeathDistribution: calculateDeathDistribution,
-        calculateFrom0Percentiles: calculateFrom0Percentiles,
-        calculateSkillScore: calculateSkillScore,
-        calculateStability: calculateStability,
-        buildRadarData: buildRadarData,
-        countRawAttemptsFromText: countRawAttemptsFromText,
-        getBestRuns: getBestRuns,
-        getLongestRuns: getLongestRuns,
-        getStableRuns: getStableRuns,
-        DIFFICULTY_MATRIX: DIFFICULTY_MATRIX
+        analyzeInput, parseMetricsLine, buildRuns, analyzePaths,
+        calculateReadiness, generateCoachSuggestions, validateInput,
+        calculateCoverage, calculateDeathDistribution, calculateFrom0Percentiles,
+        calculateSkillScore, calculateStability, buildRadarData,
+        countRawAttemptsFromText, getBestRuns, getLongestRuns, getStableRuns,
+        DIFFICULTY_MATRIX
     };
 }
