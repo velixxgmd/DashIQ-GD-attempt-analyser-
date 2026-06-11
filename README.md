@@ -2,28 +2,31 @@
 
 A modern, dark-themed web application for analyzing Geometry Dash progress data. This website ports the Python CLI analyzer to a fully functional web interface with glassmorphism design and real-time visualizations.
 
-## Recent Updates (June 2, 2026)
+## Recent Updates (June 11, 2026)
 
-### Critical Bug Fixes Applied
-1. **✅ Critical Syntax Error Fixed**: Fixed JavaScript syntax error where const declarations were inside a return object (lines 909-914). Moved all variable declarations outside the return statement to prevent script crashes.
+### Core Algorithmic & Analysis Upgrades (Cognitive Engine v6.1 / v7.0)
+1. **✅ Safe Regex Pattern Boundary Constraints**: Upgraded `RANGE_PATTERN` and `SINGLE_PATTERN` with lookarounds (`(?:^|\s)` and `(?=[\s,]|$)`) to enforce strict word/whitespace boundaries, eliminating corrupted segment parses when integers are adjacent.
 
-2. **✅ Coverage Calculation Mathematically Fixed**: Replaced discrete point counting with continuous measurement using run merging. Previous approach counted integer points (e.g., 22-75% counted 54 points instead of the mathematically correct 53%). New implementation merges overlapping runs and calculates exact continuous coverage as sum of (end - start) lengths, clamped to 100%.
+2. **✅ Hard Crash & Infinite Loop Protection**: Implemented strict safety limits on the routing pathfinder (`MAX_BFS_ITERATIONS = 100000` and `BFS_TIMEOUT_MS = 2000`) to guarantee the browser window never freezes or hangs on massive, deeply complex data loops.
 
-3. **✅ Unused Variable Removed**: Removed unused `completionRuns` variable that was causing linting warnings.
+3. **✅ Custom Demon Evaluation Thresholds**: Introduced `DEMON_THRESHOLDS_V7` to provide specialized performance metrics uniquely scaled across different Demon tiers (Easy to Extreme), introducing analytical grading for Mechanical Skill, Consistency, Endurance, Nerves, and Proof.
 
-4. **✅ Nerves Score Inverted Logic Fixed**: Fixed calculation that was backwards - now properly rewards fewer late deaths instead of punishing them. The tier calculation now correctly interprets nervesScore (0 = best, READINESS_NERVES_WEIGHT = worst).
+4. **✅ Quadratic Death Severity Scaling**: Implemented non-linear, exponential risk curves (`Math.pow(percent / 100, 2)`) for death weights, mimicking the heightened psychological pressure and raw difficulty scale of deep late-game runs.
 
-5. **✅ Readiness Proof Score Granularity**: Changed proof score from binary (full weight for any beats vs 0 for none) to granular scaling based on beat count: `(explicitBeats / 5) * READINESS_PROOF_WEIGHT`, capped at READINESS_PROOF_WEIGHT.
+5. **✅ Analytical Choke Pattern Tracking**: Integrated multi-layered configuration variables (`EARLY_WALL_WEIGHT`, `LATE_WALL_WEIGHT`, `ISOLATED_OPENING_WEIGHT`) to accurately flag structural level blockades and bottlenecks.
 
-6. **✅ Virtual From-0 Run Count Fixed**: Changed virtual from-0 run count from 1 to 0 to prevent artificial inflation of path analysis with fake attempts.
+6. **✅ Defensive Numeric Formatting**: Added robust string/float sanitization fallback layers (`safeToFixed()`) to keep the UI dashboard clean and prevent breakdown crashes if the engine pushes incomplete metrics.
 
-7. **✅ Input Validation Added**: Added call to `validateInput()` function in `analyzeInput()` to catch invalid ranges and percentages before analysis.
+### Performance, Mobile & Layout Optimizations
+1. **✅ Unified Pointer Event Engine**: Replaced old touch utilities with unified Pointer Event listeners (`pointerdown`, `pointerup`, `pointercancel`) to completely strip away mobile touch-tap delays while adding immediate, scaling element transformations.
 
-8. **✅ Debug Console Logs Gated**: Added `DEBUG_MODE` flag and gated all `console.log` statements behind it for production readiness. Set to `false` by default.
+2. **✅ Propagation Isolation on Inputs**: Isolated pointer event bubbling on input textareas, meaning user interactions like swipe-scrolling inside text boundaries no longer misfire or disrupt active touch-scrolling workflows.
 
-9. **✅ Regex Global Flag State Consistency**: Fixed another regex construction bug in `parseLine()` function by using `BEAT_PATTERN.lastIndex = 0` instead of `new RegExp(BEAT_PATTERN)`.
+3. **✅ Manual Scroll State Enforcement**: Programmed explicit browser history tracking rules (`history.scrollRestoration = 'manual'`) coupled with hash initialization sweeps on page reloads to reliably snap users back to the header view.
 
-10. **✅ Forecast Volatility Division by Zero**: Improved handling when `baseEstimate` is 0 - now returns "Unknown" instead of "Low" volatility, since 0 attempts with 0 variance is undefined, not low volatility.
+4. **✅ Smart Hardware Capability Detection**: Added automated client capabilities checking (`navigator.hardwareConcurrency` and `navigator.deviceMemory`) to automatically spot lower-end mobile devices or weak environments.
+
+5. **✅ Automated Low Detail Mode (LDM) & Mobile Engine**: Designed deep `.ldm-enabled` and `.mobile-mode` CSS wrappers that drop computationally expensive decorations (the new Constellations particle engine, dust motes, background spark waves) on weaker devices or phones while keeping analytics canvas graphs completely active.
 
 ### Earlier Bug Fixes
 - **Regex Construction Bug Fixed**: Fixed issue in analyzer.js where `new RegExp(BEAT_PATTERN, 'gi')` was incorrectly creating a RegExp from another RegExp object. Changed to use `BEAT_PATTERN.lastIndex = 0` for proper regex state management.
@@ -32,10 +35,10 @@ A modern, dark-themed web application for analyzing Geometry Dash progress data.
 
 ### Status
 - ✅ Website structure matches design document specifications
-- ✅ Core analysis logic ported from Python v2.6 and v7.7-PRO
-- ✅ Glassmorphism UI with dark theme and neon accents implemented
-- ✅ All critical bugs fixed
-- ✅ Website tested and functional in browser
+- ✅ Core analysis engine upgraded from v5.3 to **v6.1 / Engine v7.0**
+- ✅ Glassmorphism UI with adaptive hardware profiles and mobile performance buffers
+- ✅ Zero-delay touch responses deployed
+- ✅ Website fully tested and functional in desktop and mobile browsers
 
 ## Features
 
@@ -43,25 +46,24 @@ A modern, dark-themed web application for analyzing Geometry Dash progress data.
 - **Glassmorphism Design**: Modern, futuristic UI with neon accents
 - **Comprehensive Dashboard**: 
   - Session snapshot with attempt statistics
-  - Readiness panel with skill tiers
+  - Readiness panel with skill tiers and custom Demon metrics
   - Practice heatmap visualization
-  - Route path analysis
-  - Coach suggestions
-  - Attempt forecasting
+  - Route path analysis with crash timeout protection
+  - Coach suggestions based on level choke weights
+  - Attempt forecasting with quadratic decay tracking
 - **Multiple Input Formats**: Supports ranges, singles, beats, and section labels
-- **Difficulty Calibration**: Adjust analysis based on level difficulty
-- **Responsive Design**: Works on desktop and mobile devices
+- **Difficulty Calibration**: Adjust analysis based on level difficulty (Auto up to Extreme Demon thresholds)
+- **Responsive & Optimized Design**: Features standard, Low Detail (LDM), and Mobile rendering profiles
 
 ## File Structure
 
-```
 website/
-├── index.html          # Main HTML structure
-├── styles.css          # All styling and animations
-├── analyzer.js         # Core analysis logic (ported from Python)
-├── main.js            # UI interactions and DOM manipulation
-└── README.md          # This file
-```
+├── index.html          # Main HTML structure with Constellations overlay
+├── styles.css          # All styling, animations, and hardware mode flags
+├── analyzer.js         # Core analysis logic (Cognitive Engine v6.1 / v7.0)
+├── main.js            # UI interactions, hardware profiling, and Pointer Events
+└── README.md           # This file
+
 
 ## How to Use
 
@@ -88,14 +90,13 @@ The analyzer supports multiple input formats:
 
 ### Example Input
 
-```
 From 0: 45% x3, 67% x1, 23% x2
 Runs: 20-40% x5, 50-75% x2
 From 0: 78% x1
 Runs: 30-60% x3, 70-90% x1
 From 0: 55% x2, 82% x1
 Runs: 40-65% x4, 80-95% x2
-```
+
 
 ### Understanding the Results
 
@@ -109,7 +110,7 @@ Runs: 40-65% x4, 80-95% x2
 - **Overall Readiness**: Composite score (0-100%) of completion likelihood
 - **Skill Tier**: Grade based on best from-0 progress
 - **Consistency Tier**: Grade based on segment pass rates
-- **Nerves Tier**: Grade based on late-game death patterns
+- **Nerves Tier**: Grade based on late-game death patterns and exponential severity scaling
 
 #### Practice Heatmap
 Visual breakdown of the level into 10% segments, color-coded by risk:
@@ -119,11 +120,11 @@ Visual breakdown of the level into 10% segments, color-coded by risk:
 - **Green (Safe)**: > 80% pass rate
 
 #### Route Path
-Shows your most stable practice segments with attempt counts and reliability metrics.
+Shows your most stable practice segments with attempt counts and reliability metrics (safeguarded against infinite loops).
 
 #### Coach Suggestions
 Personalized recommendations based on your data:
-- What to focus on next
+- What to focus on next (e.g., clearing identified early or late choke walls)
 - Biggest performance gaps
 - Optimal practice routes
 - Areas of strength
@@ -135,19 +136,19 @@ Estimated attempts remaining to complete the level, with confidence intervals.
 
 ### Ported from Python
 
-The core analysis logic has been faithfully ported from the original Python scripts:
+The core analysis logic has been faithfully ported from the original Python scripts and modernized:
 - `gd att counter v2.6 (uploaded).py` - Base implementation
-- `gd att counter.py` - Advanced features from v7.7-PRO
+- `gd att counter.py` - Advanced features up to current v7.0 models
 
 ### JavaScript Implementation
 
 Key functions ported:
-- **Input Parsing**: Regex-based parsing with multiple format support
-- **Run Building**: Merging duplicate entries and categorizing runs
-- **Path Analysis**: BFS algorithm for route optimization
+- **Input Parsing**: Regex-based parsing with lookarounds to maximize formatting safety
+- **Run Building**: Merging duplicate entries and tracking continuous unique coverage
+- **Path Analysis**: BFS algorithm for route optimization with active execution time bounds
 - **Consistency Calculations**: Log-weighted pass rate analysis
-- **Readiness Scoring**: Multi-factor readiness assessment
-- **Forecasting**: Difficulty-adjusted attempt estimation
+- **Readiness Scoring**: Tiered analysis scaled specifically to different Demon tiers
+- **Forecasting**: Quadratic decay-adjusted attempt estimation
 
 ### Browser Compatibility
 
@@ -161,7 +162,7 @@ Based on the provided design document:
 - **Color Palette**: Midnight black background with neon blue, cyan, pink, and purple accents
 - **Typography**: Modern sans-serif with clean tech aesthetic
 - **Style**: Glassmorphism with blur effects, transparency, and subtle animations
-- **Layout**: Responsive grid system with floating cards and layered depth
+- **Layout**: Responsive grid system with floating cards, adaptive mobile limits, and layered depth
 
 ## Troubleshooting
 
