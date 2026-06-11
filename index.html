@@ -17,6 +17,7 @@
         <div class="sparkle-container" id="sparkle-container"></div>
         <div class="dust-container" id="dust-container"></div>
         <div class="geometric-shapes" id="geometric-shapes"></div>
+        <div class="constellations-container" id="constellations"></div>
         <div class="light-beam"></div>
         <div class="light-beam"></div>
         <div class="light-beam"></div>
@@ -70,8 +71,8 @@
                 <a href="#coach" class="nav-item" data-section="coach">Coach</a>
             </div>
             <div class="nav-right">
-                <button class="btn-secondary" id="nav-demo-btn">Demo</button>
-                <button class="btn-primary" onclick="scrollToAnalyzer()">Upload Runs</button>
+                <button type="button" class="btn-secondary" id="nav-demo-btn">Demo</button>
+                <button type="button" class="btn-primary" onclick="scrollToAnalyzer()">Upload Runs</button>
             </div>
         </div>
     </nav>
@@ -82,7 +83,7 @@
             <div class="hero-left">
                 <div class="hero-badge">
                     <span class="badge-pulse"></span>
-                    <span class="badge-text">v5.3 Engine Active</span>
+                    <span class="badge-text">v7.0 Engine Active</span>
                 </div>
                 <h1 class="hero-title">
                     <span class="gradient-text">See Your</span>
@@ -249,12 +250,12 @@ beat x1 (for verified completion)
 Tip: Type END on a new line to auto-analyze"
             ></textarea>
             <div class="input-actions">
-                <button id="analyze-button" class="btn-analyze magnetic-btn">
+                <button type="button" id="analyze-button" class="btn-analyze magnetic-btn">
                     <span>Analyze Runs</span>
                     <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><path d="M11 5v12m-6-6h12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
                 </button>
-                <button class="btn-secondary" id="clear-btn">Clear</button>
-                <button class="btn-secondary" id="paste-demo-btn">Load Demo</button>
+                <button type="button" class="btn-secondary" id="clear-btn">Clear</button>
+                <button type="button" class="btn-secondary" id="paste-demo-btn">Load Demo</button>
             </div>
             <div class="input-hint">
                 <span class="hint-icon">
@@ -273,6 +274,29 @@ Tip: Type END on a new line to auto-analyze"
             <p>Your performance breakdown in real-time</p>
         </div>
         <div class="dashboard-grid">
+            <!-- Overall Grade (MOVED TO TOP - PRIORITY) -->
+            <div class="dashboard-card clickable-card glass-panel priority-card" data-card="overall-grade" data-tilt>
+                <div class="card-glow"></div>
+                <div class="card-header">
+                    <div class="card-icon">🏆</div>
+                    <h3>Overall Grade</h3>
+                </div>
+                <div class="card-content">
+                    <div class="grade-display">
+                        <div class="grade-circle animated-number" id="overall-grade-tier">--</div>
+                        <div class="preview-item">
+                            <span class="preview-label">Grade Score</span>
+                            <span class="preview-value animated-number" id="overall-grade-score">--</span>
+                        </div>
+                        <div class="preview-item">
+                            <span class="preview-label">Tier Classification</span>
+                            <span class="preview-value tier-badge" id="overall-grade-label">--</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer"><span class="click-hint">Live visualization</span></div>
+            </div>
+
             <!-- Session Snapshot -->
             <div class="dashboard-card clickable-card glass-panel" data-card="session-stats" data-tilt>
                 <div class="card-glow"></div>
@@ -535,6 +559,57 @@ Tip: Type END on a new line to auto-analyze"
                 </div>
             </div>
 
+            <!-- Completion Probability (V7) -->
+            <div class="dashboard-card glass-panel" data-tilt>
+                <div class="card-glow"></div>
+                <div class="card-header">
+                    <div class="card-icon">🎯</div>
+                    <h3>Completion Probability</h3>
+                </div>
+                <div class="card-content">
+                    <div class="grade-display">
+                        <div class="grade-circle animated-number" id="completion-probability">--</div>
+                        <div class="preview-item">
+                            <span class="preview-label">Chance to Complete</span>
+                            <span class="preview-value" id="completion-probability-label">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Progress Velocity (V7) -->
+            <div class="dashboard-card glass-panel" data-tilt>
+                <div class="card-glow"></div>
+                <div class="card-header">
+                    <div class="card-icon">⚡</div>
+                    <h3>Progress Velocity</h3>
+                </div>
+                <div class="card-content">
+                    <div class="stat-row">
+                        <span class="stat-label">Velocity</span>
+                        <span class="stat-value tier-badge" id="progress-velocity-label">--</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Score</span>
+                        <span class="stat-value animated-number" id="progress-velocity-score">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Demon Readiness (V7) -->
+            <div class="dashboard-card glass-panel wide" data-tilt>
+                <div class="card-glow"></div>
+                <div class="card-header">
+                    <div class="card-icon">👹</div>
+                    <h3>Demon Readiness</h3>
+                </div>
+                <div class="card-content">
+                    <div id="demon-readiness-container">
+                        <div class="empty-state">No data available</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Death Distribution -->
             <div class="dashboard-card death-card clickable-card glass-panel" data-card="death-distribution" data-tilt>
                 <div class="card-glow"></div>
@@ -582,6 +657,91 @@ Tip: Type END on a new line to auto-analyze"
                         <div class="preview-item">
                             <span class="preview-label">Improvement</span>
                             <span class="preview-value animated-number" id="improvement-rate">--</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <span class="click-hint">Click to expand →</span>
+                </div>
+            </div>
+
+            <!-- Pass Rate 10% Chunks (NEW) -->
+            <div class="dashboard-card wide clickable-card glass-panel" data-card="pass-rate-chunks" data-tilt>
+                <div class="card-glow"></div>
+                <div class="card-header">
+                    <div class="card-icon">📊</div>
+                    <h3>Pass Rate by Segment (10% Chunks)</h3>
+                </div>
+                <div class="card-content">
+                    <div class="pass-rate-chunked" id="pass-rate-chunks-container">
+                        <!-- Generated here -->
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <span class="click-hint">Click to expand →</span>
+                </div>
+            </div>
+
+            <!-- Nerve Chart / Stress Visualization (ENHANCED v6.1) -->
+            <div class="dashboard-card wide clickable-card glass-panel" data-card="nerve-chart" data-tilt>
+                <div class="card-glow"></div>
+                <div class="card-header">
+                    <div class="card-icon">😰</div>
+                    <h3>Nerve Chart — Pass Rate vs Stress</h3>
+                </div>
+                <div class="card-content">
+                    <canvas id="nerve-visualization" class="nerve-chart-canvas" width="600" height="220"></canvas>
+                    <div class="nerve-legend">
+                        <div class="legend-item"><div class="legend-dot high-stress"></div><span>Critical Risk (>70% stress)</span></div>
+                        <div class="legend-item"><div class="legend-dot medium-stress"></div><span>High Risk (50-70%)</span></div>
+                        <div class="legend-item"><div class="legend-dot moderate-stress"></div><span>Moderate (30-50%)</span></div>
+                        <div class="legend-item"><div class="legend-dot safe-stress"></div><span>Safe (<30%)</span></div>
+                    </div>
+                    <div class="nerve-stats">
+                        <div class="stat-box">
+                            <span class="stat-label">Highest Risk Zone</span>
+                            <span class="stat-value" id="nerve-highest-risk">--</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Critical Zones</span>
+                            <span class="stat-value" id="nerve-critical-count">0</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Best Pass Rate</span>
+                            <span class="stat-value" id="nerve-best-pass">--</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <span class="click-hint">Click to expand →</span>
+                </div>
+            </div>
+
+            <!-- Skill Progress Curve (NEW v6.1) -->
+            <div class="dashboard-card wide glass-panel" data-tilt>
+                <div class="card-glow"></div>
+                <div class="card-header">
+                    <div class="card-icon">📈</div>
+                    <h3>Skill Progression — Current vs Projected</h3>
+                </div>
+                <div class="card-content">
+                    <canvas id="skill-curve-canvas" class="skill-curve-chart" width="600" height="220"></canvas>
+                    <div class="skill-progression-stats">
+                        <div class="stat-box">
+                            <span class="stat-label">Current Best</span>
+                            <span class="stat-value" id="current-skill-percent">80%</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Projected (+100 runs)</span>
+                            <span class="stat-value" id="projected-skill-percent">--</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Plateau Risk</span>
+                            <span class="stat-value" id="plateau-risk-indicator">Low</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Est. Time to Beat</span>
+                            <span class="stat-value" id="time-to-beat">--</span>
                         </div>
                     </div>
                 </div>
@@ -894,6 +1054,63 @@ Tip: Type END on a new line to auto-analyze"
         </div>
     </section>
 
+    <!-- Overall Grade Detail Page (NEW) -->
+    <section id="detail-overall-grade" class="detail-page hidden">
+        <div class="detail-bg"></div>
+        <button class="back-button magnetic-btn" onclick="closeDetailPage()">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M15 10H5m4-4l-4 4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Back
+        </button>
+        <div class="detail-header">
+            <div class="section-tag">GRADE</div>
+            <h2>Overall Performance Grade</h2>
+            <p>Comprehensive skill tier breakdown (F to S)</p>
+        </div>
+        <div class="detail-content">
+            <div id="overall-grade-detail" class="detail-list">
+                <div class="empty-state">No data available</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pass Rate Chunks Detail Page (NEW) -->
+    <section id="detail-pass-rate-chunks" class="detail-page hidden">
+        <div class="detail-bg"></div>
+        <button class="back-button magnetic-btn" onclick="closeDetailPage()">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M15 10H5m4-4l-4 4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Back
+        </button>
+        <div class="detail-header">
+            <div class="section-tag">PASS RATE</div>
+            <h2>Pass Rate by Segment</h2>
+            <p>Survival rate across 10% chunks of the level</p>
+        </div>
+        <div class="detail-content">
+            <div id="pass-rate-chunks-detail" class="detail-list">
+                <div class="empty-state">No data available</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Nerve Chart Detail Page (NEW) -->
+    <section id="detail-nerve-chart" class="detail-page hidden">
+        <div class="detail-bg"></div>
+        <button class="back-button magnetic-btn" onclick="closeDetailPage()">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M15 10H5m4-4l-4 4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Back
+        </button>
+        <div class="detail-header">
+            <div class="section-tag">NERVES</div>
+            <h2>Nerve Chart — Stress/Choke Risk</h2>
+            <p>Predicted player stress levels at each level percentage</p>
+        </div>
+        <div class="detail-content">
+            <div id="nerve-chart-detail" class="detail-list">
+                <div class="empty-state">No data available</div>
+            </div>
+        </div>
+    </section>
+
     <!-- Coach Section -->
     <section id="coach" class="coach-section hidden">
         <div class="section-header reveal-on-scroll">
@@ -961,7 +1178,7 @@ Tip: Type END on a new line to auto-analyze"
             </div>
         </div>
         <div class="footer-bottom">
-            <span>Powered by Cognitive Engine v5.3</span>
+            <span>Powered by Cognitive Engine v6.0</span>
         </div>
     </footer>
 
