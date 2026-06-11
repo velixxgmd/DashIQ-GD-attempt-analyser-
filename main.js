@@ -1401,17 +1401,39 @@ function renderHeatmap(segmentData) {
     const container = document.getElementById('heatmap');
     container.innerHTML = '';
 
+    // V6.2 FIX: Practice heatmap uses STARTPOS runs coverage, not from-0 pass rates
+    // This shows where you've actually practiced, not where you died
+    const startposRuns = (analysisResults?.bestRunsAll || []).filter(r => r.type === 'run');
+
     for (let b = 0; b < 10; b++) {
         const start = b * 10;
         const end = (b + 1) * 10;
 
+        // Check if any startpos run covers this segment
+        const coveringRuns = startposRuns.filter(r => r.start <= start && r.end >= end);
+        const totalCoverage = coveringRuns.reduce((sum, r) => sum + (r.count || 0), 0);
+
+        // Also check from-0 death data for context
         const segment = segmentData.find(s => s.start === start && s.end === end);
 
         const segmentEl = document.createElement('div');
         segmentEl.className = 'heatmap-segment';
         segmentEl.setAttribute('data-label', `${start}-${end}`);
 
-        if (segment && segment.passRate !== null) {
+        if (totalCoverage > 0) {
+            // Has startpos practice coverage - color by intensity
+            if (totalCoverage >= 50) {
+                segmentEl.classList.add('safe');
+            } else if (totalCoverage >= 20) {
+                segmentEl.classList.add('low');
+            } else if (totalCoverage >= 5) {
+                segmentEl.classList.add('medium');
+            } else {
+                segmentEl.classList.add('high');
+            }
+            segmentEl.title = `Segment ${start}%-${end}%: ${totalCoverage} startpos runs covering this area`;
+        } else if (segment && segment.passRate !== null) {
+            // No startpos data but has from-0 pass rate data
             if (segment.passRate < 30) {
                 segmentEl.classList.add('high');
             } else if (segment.passRate < 60) {
@@ -1421,14 +1443,13 @@ function renderHeatmap(segmentData) {
             } else {
                 segmentEl.classList.add('safe');
             }
-
-            segmentEl.title = `Segment ${start}%-${end}%: ${safeToFixed(segment?.passRate, 1)}% pass rate (${segment?.sampleWeight || 0} attempts)`;
+            segmentEl.title = `Segment ${start}%-${end}%: ${safeToFixed(segment?.passRate, 1)}% pass rate (from-0 only, no startpos practice)`;
         } else if (segment && segment.hasCoverage) {
             segmentEl.style.background = 'rgba(255, 255, 255, 0.08)';
             segmentEl.title = `Segment ${start}%-${end}%: Startpos only — no from-0 data`;
         } else {
             segmentEl.style.background = 'rgba(255, 255, 255, 0.03)';
-            segmentEl.title = `Segment ${start}%-${end}%: No data`;
+            segmentEl.title = `Segment ${start}%-${end}%: No practice data`;
         }
 
         container.appendChild(segmentEl);
@@ -1443,18 +1464,53 @@ function renderRoutePath(results) {
     const container = document.getElementById('route-path');
     container.innerHTML = '';
 
-    // CRITICAL FIX: Show actual completion ROUTES, not practice runs
-    // Routes are 0→100% paths made of segments
+    // V6.2: Show actual completion ROUTES with overlap support
     if (!results || !results.routes || results.routes.length === 0) {
+        // Check if we have enough data to suggest a theoretical route
+        const bestFrom0 = results?.bestFrom0 || 0;
+        const startposRuns = (results?.bestRunsAll || []).filter(r => r.type === 'run');
+
+        // Find if there's a run that connects to bestFrom0
+        const connectingRuns = startposRuns.filter(r => r.start <= bestFrom0 && r.end === 100);
+
+        if (bestFrom0 > 0 && connectingRuns.length > 0) {
+            // We can suggest a 2-run route even if BFS didn't find it
+            const bestConnect = connectingRuns.sort((a, b) => (b.count || 0) - (a.count || 0))[0];
+            container.innerHTML = `
+                <div class="route-preview-container">
+                    <div class="route-preview-header">
+                        <span style="font-size: 12px; color: var(--muted-gray);">SUGGESTED PATH (Overlap Enabled)</span>
+                    </div>
+                    <div class="route-segment animated">
+                        <div class="segment-label">
+                            <span class="segment-range">0% → ${bestFrom0}%</span>
+                            <span class="segment-length">(${bestFrom0}%)</span>
+                            <span style="font-size: 10px; color: var(--cyan-glow);">from-0 proven</span>
+                        </div>
+                        <div class="segment-bar high" style="width: ${bestFrom0}%; opacity: 0.7; border-left: 3px solid var(--cyan-glow);"></div>
+                    </div>
+                    <div style="text-align: center; color: var(--muted-gray); font-size: 11px; margin: 4px 0;">▼ overlaps at ${bestConnect.start}%</div>
+                    <div class="route-segment animated" style="animation-delay: 0.12s">
+                        <div class="segment-label">
+                            <span class="segment-range">${bestConnect.start}% → 100%</span>
+                            <span class="segment-length">(${bestConnect.length}%)</span>
+                        </div>
+                        <div class="segment-bar high" style="width: ${bestConnect.length}%"></div>
+                        <span class="segment-count">${bestConnect.count}x</span>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+
         container.innerHTML = '<div class="empty-state">Grind to unlock routes</div>';
         return;
     }
 
     // Get best (shortest) route - most reliable
-    const bestRoute = results.routes[0]; // Already sorted by segments
+    const bestRoute = results.routes[0];
     if (!bestRoute) return;
 
-    // Display the best route breakdown
     const routeEl = document.createElement('div');
     routeEl.className = 'route-preview-container';
 
@@ -1470,10 +1526,9 @@ function renderRoutePath(results) {
             segmentEl.className = 'route-segment animated';
             segmentEl.style.animationDelay = `${idx * 0.12}s`;
 
-            const percentWidth = (segment.length / 100) * 100;
+            const percentWidth = Math.min(100, (segment.length / 100) * 100);
             const reliability = segment.length > 30 ? 'high' : segment.length > 15 ? 'medium' : 'low';
 
-            // Handle virtual from-0 segments differently (show them clearly)
             const isVirtual = segment.type === 'virtual_from0' || segment.type === 'virtual';
             const segmentStyle = isVirtual ? 'opacity: 0.7; border-left: 3px solid var(--cyan-glow);' : '';
 
@@ -1487,6 +1542,17 @@ function renderRoutePath(results) {
                 <span class="segment-count">${segment.count}x</span>
             `;
             routeEl.appendChild(segmentEl);
+
+            // Show overlap indicator if next segment overlaps
+            if (idx < bestRoute.runs.length - 1) {
+                const nextSeg = bestRoute.runs[idx + 1];
+                if (nextSeg.start < segment.end) {
+                    const overlapIndicator = document.createElement('div');
+                    overlapIndicator.style.cssText = 'text-align: center; color: var(--cyan-glow); font-size: 10px; margin: 2px 0; opacity: 0.7;';
+                    overlapIndicator.textContent = `↳ overlaps ${segment.end - nextSeg.start}%`;
+                    routeEl.appendChild(overlapIndicator);
+                }
+            }
         });
     }
 
