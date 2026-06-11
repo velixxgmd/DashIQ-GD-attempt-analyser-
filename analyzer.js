@@ -718,17 +718,16 @@ function calculateCoverage(actualRuns) {
 // ============================================================================
 
 // ROUTE MATCHING TOLERANCE: Segments can connect if they overlap or are within this %
-const ROUTE_OVERLAP_TOLERANCE = 5;
+const ROUTE_OVERLAP_TOLERANCE = 30;
 
 /**
  * Check if two segments can connect (with tolerance)
  * A segment ending at 61 can connect to one starting at 61, 60, 62, etc.
  */
 function canConnect(prevEnd, nextStart) {
-    // Segments connect if nextStart overlaps with or touches prevEnd.
-    // nextStart must be <= prevEnd (no forward gaps allowed).
-    // Small backward tolerance allows overlapping segments (e.g., 0-62 connects to 60-100).
-    return nextStart <= prevEnd && nextStart >= prevEnd - ROUTE_OVERLAP_TOLERANCE;
+    // Segments connect if nextStart is within tolerance of prevEnd
+    // This allows 0-61 to connect with 61-100, or 0-60 to connect with 61-100
+    return nextStart <= prevEnd + ROUTE_OVERLAP_TOLERANCE && nextStart >= prevEnd - ROUTE_OVERLAP_TOLERANCE;
 }
 
 function analyzePaths(actualRuns, bestFrom0) {
@@ -842,7 +841,7 @@ function analyzePaths(actualRuns, bestFrom0) {
         const opts = [];
         for (let i = 0; i < poolByEnd.length; i++) {
             const r = poolByEnd[i];
-            if (r.start <= cp && r.end > cp) {
+            if (r.start <= cp + ROUTE_OVERLAP_TOLERANCE && r.end > cp) {
                 // Prevent using the same segment twice in one path
                 let alreadyUsed = false;
                 for (let j = 0; j < path.length; j++) {
@@ -904,7 +903,7 @@ function analyzePaths(actualRuns, bestFrom0) {
     const completionRoutes = [];
     for (let i = 0; i < allPaths.length; i++) {
         const p = allPaths[i];
-        if (p.length > 0 && p[0].start <= 2 && p[p.length - 1].end >= 98) {
+        if (p.length > 0 && p[0].start <= ROUTE_OVERLAP_TOLERANCE && p[p.length - 1].end >= 100 - ROUTE_OVERLAP_TOLERANCE) {
             completionRoutes.push(p);
         }
     }
@@ -965,7 +964,7 @@ function analyzePaths(actualRuns, bestFrom0) {
 // CONSISTENCY
 // ============================================================================
 
-function calculateSegmentConsistency(start, end, from0Freq, completions) {
+function calculateSegmentConsistency(start, end, from0Freq, completions, actualRuns) {
     let reachedStart = 0, reachedEnd = 0;
     const keys = Object.keys(from0Freq);
     for (let i = 0; i < keys.length; i++) {
@@ -978,10 +977,27 @@ function calculateSegmentConsistency(start, end, from0Freq, completions) {
         reachedStart += completions;
         reachedEnd += completions;
     }
+    
+    // Include startpos runs for practice map (type="run")
+    for (let i = 0; i < (actualRuns || []).length; i++) {
+        const r = actualRuns[i];
+        if (r.type === "run" && r.start <= start && r.end >= end) {
+            reachedStart += r.count;
+            reachedEnd += r.count;
+        }
+    }
+    
     let total = 0;
     const values = Object.values(from0Freq);
     for (let i = 0; i < values.length; i++) total += values[i];
     total += completions;
+    
+    // Add startpos run counts to total
+    for (let i = 0; i < (actualRuns || []).length; i++) {
+        const r = actualRuns[i];
+        if (r.type === "run") total += r.count;
+    }
+    
     if (total < MIN_SEGMENT_SAMPLES) return { passRate: null, sampleWeight: total, reliable: false };
     if (reachedStart === 0) return { passRate: null, sampleWeight: 0, reliable: false };
     if (reachedStart < MIN_SEGMENT_SAMPLES) return { passRate: null, sampleWeight: reachedStart, reliable: false };
@@ -993,7 +1009,7 @@ function renderSegmentConsistency(actualRuns, from0Freq, completions) {
     const openingPressure = analyzeOpeningPressure(from0Freq);
     for (let b = 0; b < 10; b++) {
         const start = b * 10, end = (b + 1) * 10;
-        const r = calculateSegmentConsistency(start, end, from0Freq, completions);
+        const r = calculateSegmentConsistency(start, end, from0Freq, completions, actualRuns);
         let hasCoverage = false;
         for (let i = 0; i < actualRuns.length; i++) {
             const x = actualRuns[i];
