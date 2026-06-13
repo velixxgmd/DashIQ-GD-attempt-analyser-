@@ -12,7 +12,8 @@ const DEBUG_MODE = false;
 function round1(n) {
     const num = Number(n);
     if (!isFinite(num)) return '0.0';
-    return (Math.round(num * 10) / 10).toFixed(1);
+    const rounded = Math.round(num * 10) / 10;
+    return rounded.toFixed(1);
 }
 
 // Safe number formatting - handles strings from analyzer.js .toFixed() results
@@ -750,12 +751,29 @@ function displayResults(results) {
     // Top Runs
     renderTopRuns(results.bestRuns || [], results.longestRuns || []);
 
-    // Coach Section
-    document.getElementById('next-action').textContent = results.coachSuggestions?.nextAction || 'Keep playing';
-    document.getElementById('biggest-gap').textContent = (results.coachSuggestions?.biggestGap || 'None') + openingNote;
-    document.getElementById('best-route').textContent = results.coachSuggestions?.bestRoute || 'None';
-    document.getElementById('strong-areas').textContent = results.coachSuggestions?.strongAreas || 'None';
-    document.getElementById('today-focus').textContent = results.coachSuggestions?.todayFocus || 'None';
+    // Coach Section - handle all data scenarios
+    if (!hasFrom0 && hasStartpos) {
+        // Only startpos data
+        document.getElementById('next-action').textContent = 'Start doing full from-0 attempts to establish your baseline progress.';
+        document.getElementById('biggest-gap').textContent = 'No from-0 data. Startpos runs alone cannot prove completion paths.';
+        document.getElementById('best-route').textContent = 'Do 50+ attempts from 0% to find your current best and weak spots.';
+        document.getElementById('strong-areas').textContent = 'You have startpos practice data. Combine with from-0 runs for full analysis.';
+        document.getElementById('today-focus').textContent = 'Today: 20-30 full from-0 attempts. Track your deaths and best progress.';
+    } else if (hasFrom0 && !hasStartpos && results.bestFrom0 < 100) {
+        // Only from-0 data, not completed
+        document.getElementById('next-action').textContent = `Practice ${results.bestFrom0}-100% with startpos to build endgame consistency.`;
+        document.getElementById('biggest-gap').textContent = `No startpos coverage past ${results.bestFrom0}%. Need endgame practice.`;
+        document.getElementById('best-route').textContent = `Best from-0: ${results.bestFrom0}%. Practice the final ${100 - results.bestFrom0}% in isolation.`;
+        document.getElementById('strong-areas').textContent = `You can consistently reach ${results.bestFrom0}%. Build from there.`;
+        document.getElementById('today-focus').textContent = `Today: 50% from-0 attempts, 50% ${results.bestFrom0}-100% startpos practice.`;
+    } else {
+        // Normal case (both data types or completed)
+        document.getElementById('next-action').textContent = results.coachSuggestions?.nextAction || 'Keep playing';
+        document.getElementById('biggest-gap').textContent = (results.coachSuggestions?.biggestGap || 'None') + openingNote;
+        document.getElementById('best-route').textContent = results.coachSuggestions?.bestRoute || 'None';
+        document.getElementById('strong-areas').textContent = results.coachSuggestions?.strongAreas || 'None';
+        document.getElementById('today-focus').textContent = results.coachSuggestions?.todayFocus || 'None';
+    }
 
     // Death Distribution
     renderDeathDistribution(results.deathDistribution || []);
@@ -924,43 +942,79 @@ function renderRouteSummary(results) {
     const bestFrom0 = results.bestFrom0 || 0;
     const completions = results.completions || 0;
 
-    // If we have valid routes from the analyzer, display them
-    if (results.routes && results.routes.length > 0) {
-        const minSegments = Math.min(...results.routes.map(r => r.segments));
-        const shortestRoutes = results.routes.filter(r => r.segments === minSegments);
+    // DEBUG: Log what we're working with
+    if (DEBUG_MODE) {
+        console.log('renderRouteSummary:', {
+            bestFrom0,
+            completions,
+            routesLength: results.routes?.length,
+            totalRoutes: results.totalRoutes,
+            bestRunsAllLength: results.bestRunsAll?.length,
+            actualRunsLength: results.actualRuns?.length
+        });
+    }
 
-        let routeListHTML = shortestRoutes.map((route, idx) => {
-            const routeText = route.route ? route.route.join(' → ') : route.start + '% → ' + route.end + '%';
-            const totalCount = (route.runs || []).reduce((s, seg) => s + (seg.count || 0), 0);
-            const badge = idx === 0 ? ' <span style="color:var(--cyan-glow);font-size:9px;">★ BEST</span>' : '';
-            return '<div style="font-size:11px;color:var(--muted-gray);margin-bottom:2px;">' + routeText + badge + (totalCount > 0 ? ' <span style="color:#8B95A8">(' + totalCount + 'x)</span>' : '') + '</div>';
-        }).join('');
+    // FORCE: If NO verified completions AND no routes found, show recommendation
+    if (completions === 0 && (!results.routes || results.routes.length === 0)) {
+        totalWaysEl.innerHTML = '0';
 
-        minRunsEl.innerHTML = '<span style="font-size: 14px; font-weight: 600;">' + minSegments + '</span><br/>' + routeListHTML;
-        totalWaysEl.textContent = (results.totalRoutes || results.routes.length).toLocaleString();
+        if (bestFrom0 > 0 && bestFrom0 < 100) {
+            // Standard case: reached X%, need 2 segments to 100%
+            const recommendedSegments = 2;
+
+            let from0Count = 0;
+            let connectCount = 0;
+
+            if (results.bestRunsAll) {
+                results.bestRunsAll.forEach(r => {
+                    if (r.start === 0 && r.end >= bestFrom0) from0Count += r.count;
+                    if (r.start >= bestFrom0 - 5 && r.start <= bestFrom0 + 5 && r.end === 100) connectCount += r.count;
+                });
+            }
+
+            const from0Text = from0Count > 0 ? `${from0Count}x` : '?';
+            const connectText = connectCount > 0 ? `${connectCount}x` : '0x';
+
+            const recommendedRoute = `0-${bestFrom0}% (${from0Text}) + ${bestFrom0}-100% (${connectText})`;
+            minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">${recommendedSegments}</span><br/><span style="font-size: 11px; color: var(--muted-gray);">${recommendedRoute}</span>`;
+        } else if (bestFrom0 === 100) {
+            minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">✅</span><br/><span style="font-size: 11px; color: var(--muted-gray);">Already beaten!</span>`;
+        } else {
+            minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">--</span><br/><span style="font-size: 11px; color: var(--muted-gray);">Start grinding</span>`;
+        }
         return;
     }
 
-    // No routes found - show status based on progress
-    totalWaysEl.innerHTML = '0';
-
-    if (bestFrom0 >= 100 || completions > 0) {
-        minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">✅</span><br/><span style="font-size: 11px; color: var(--muted-gray);">Level Complete!</span>`;
-        totalWaysEl.textContent = Math.max(1, completions).toString();
-    } else if (bestFrom0 > 0) {
-        const connectableRuns = (results.bestRunsAll || []).filter(r => 
-            r.type === 'run' && r.start <= bestFrom0 && r.end === 100
-        );
-
-        if (connectableRuns.length > 0) {
-            const bestConnect = connectableRuns.sort((a, b) => (b.count || 0) - (a.count || 0))[0];
-            minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">2</span><br/><span style="font-size: 11px; color: var(--muted-gray);">0-${bestFrom0}% + ${bestConnect.start}-100%<br/>(${bestConnect.count}x)</span>`;
-        } else {
-            minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">--</span><br/><span style="font-size: 11px; color: var(--muted-gray);">Need endgame practice<br/>(${bestFrom0}% best)</span>`;
-        }
-    } else {
-        minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">--</span><br/><span style="font-size: 11px; color: var(--muted-gray);">Start grinding</span>`;
+    // Only show analyzer routes if user HAS verified completions
+    if (!results.routes || results.routes.length === 0) {
+        minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">✅</span><br/><span style="font-size: 11px; color: var(--muted-gray);">Complete!</span>`;
+        totalWaysEl.innerHTML = completions.toString();
+        return;
     }
+
+    // Find all minimum-segment routes, sorted by reliability score (highest first)
+    const minSegments = Math.min(...results.routes.map(r => r.segments));
+    const shortestRoutes = results.routes
+        .filter(r => r.segments === minSegments)
+        .sort((a, b) => {
+            const scoreA = (a.runs || []).reduce((s, seg) => s + (seg.count || 0), 0);
+            const scoreB = (b.runs || []).reduce((s, seg) => s + (seg.count || 0), 0);
+            return scoreB - scoreA;
+        });
+
+    // Build HTML showing all shortest combinations, best first
+    let routeListHTML = shortestRoutes.map((route, idx) => {
+        const routeText = route.route ? route.route.join(' \u2192 ') : route.start + '% \u2192 ' + route.end + '%';
+        const totalCount = (route.runs || []).reduce((s, seg) => s + (seg.count || 0), 0);
+        const badge = idx === 0 ? ' <span style="color:var(--cyan-glow);font-size:9px;">\u2605 BEST</span>' : '';
+        return '<div style="font-size:11px;color:var(--muted-gray);margin-bottom:2px;">' + routeText + badge + (totalCount > 0 ? ' <span style="color:#8B95A8">(' + totalCount + 'x)</span>' : '') + '</div>';
+    }).join('');
+
+    minRunsEl.innerHTML = '<span style="font-size: 14px; font-weight: 600;">' + minSegments + '</span><br/>' + routeListHTML;
+
+    // Use totalRoutes from analyzer (which counts all paths), fallback to unique routes
+    const totalWays = results.totalRoutes || results.routes.length;
+    totalWaysEl.textContent = totalWays.toLocaleString();
 }
 
 // ============================================================================
@@ -1415,7 +1469,7 @@ function renderHeatmap(segmentData) {
             segmentEl.style.borderLeft = `3px solid rgba(97, 216, 255, ${0.5 + practiceIntensity * 0.5})`;
         }
 
-        // Tooltip with both death and practice info
+        // Tooltip with death, practice, and pass rate info
         const deathText = blockDeaths > 0 ? `Deaths: ${blockDeaths}` : 'Deaths: 0';
         const practiceText = totalCoverage > 0 ? `Practice: ${totalCoverage}` : 'Practice: 0';
         const passRate = segmentData.find(s => s.start === start && s.end === end);
@@ -1434,95 +1488,109 @@ function renderRoutePath(results) {
     const container = document.getElementById('route-path');
     container.innerHTML = '';
 
-    if (!results || !results.routes || results.routes.length === 0) {
-        const bestFrom0 = results?.bestFrom0 || 0;
-        const startposRuns = (results?.bestRunsAll || []).filter(r => r.type === 'run');
-        const connectingRuns = startposRuns.filter(r => r.start <= bestFrom0 && r.end === 100);
+    const bestFrom0 = results?.bestFrom0 || 0;
+    const startposRuns = (results?.bestRunsAll || []).filter(r => r.type === 'run');
+    const connectingRuns = startposRuns.filter(r => r.start <= bestFrom0 && r.end === 100);
 
-        if (bestFrom0 > 0 && connectingRuns.length > 0) {
-            const bestConnect = connectingRuns.sort((a, b) => (b.count || 0) - (a.count || 0))[0];
-            container.innerHTML = `
-                <div class="route-preview-container">
-                    <div class="route-preview-header">
-                        <span style="font-size: 12px; color: var(--muted-gray);">SUGGESTED PATH</span>
+    // Show actual completion ROUTES
+    if (results && results.routes && results.routes.length > 0) {
+        const bestRoute = results.routes[0];
+        if (!bestRoute) return;
+
+        const routeEl = document.createElement('div');
+        routeEl.className = 'route-preview-container';
+
+        const header = document.createElement('div');
+        header.className = 'route-preview-header';
+        header.innerHTML = `<span style="font-size: 12px; color: var(--muted-gray);">RECOMMENDED PATH (${bestRoute.segments} segments)</span>`;
+        routeEl.appendChild(header);
+
+        if (bestRoute.runs && bestRoute.runs.length > 0) {
+            bestRoute.runs.forEach((segment, idx) => {
+                const segmentEl = document.createElement('div');
+                segmentEl.className = 'route-segment animated';
+                segmentEl.style.animationDelay = `${idx * 0.12}s`;
+
+                const percentWidth = Math.min(100, (segment.length / 100) * 100);
+                const reliability = segment.length > 30 ? 'high' : segment.length > 15 ? 'medium' : 'low';
+                const isVirtual = segment.type === 'virtual';
+                const segmentStyle = isVirtual ? 'opacity: 0.7; border-left: 3px solid var(--cyan-glow);' : '';
+
+                segmentEl.innerHTML = `
+                    <div class="segment-label">
+                        <span class="segment-range">${segment.start}% → ${segment.end}%</span>
+                        <span class="segment-length">(${segment.length}%)</span>
+                        ${isVirtual ? '<span style="font-size: 10px; color: var(--cyan-glow);">from-0 proven</span>' : `<span class="segment-count">${segment.count}x</span>`}
                     </div>
-                    <div class="route-segment animated">
-                        <div class="segment-label">
-                            <span class="segment-range">0% → ${bestFrom0}%</span>
-                            <span class="segment-length">(${bestFrom0}%)</span>
-                            <span style="font-size: 10px; color: var(--cyan-glow);">from-0 proven</span>
-                        </div>
-                        <div class="segment-bar high" style="width: ${bestFrom0}%; opacity: 0.7; border-left: 3px solid var(--cyan-glow);"></div>
-                    </div>
-                    <div style="text-align: center; color: var(--muted-gray); font-size: 11px; margin: 4px 0;">▼ overlaps at ${bestConnect.start}%</div>
-                    <div class="route-segment animated" style="animation-delay: 0.12s">
-                        <div class="segment-label">
-                            <span class="segment-range">${bestConnect.start}% → 100%</span>
-                            <span class="segment-length">(${bestConnect.length}%)</span>
-                        </div>
-                        <div class="segment-bar high" style="width: ${bestConnect.length}%"></div>
-                        <span class="segment-count">${bestConnect.count}x</span>
-                    </div>
-                </div>
-            `;
-            return;
+                    <div class="segment-bar ${reliability}" style="width: ${percentWidth}%; ${segmentStyle}"></div>
+                `;
+                routeEl.appendChild(segmentEl);
+
+                // Show overlap/touch indicator
+                if (idx < bestRoute.runs.length - 1) {
+                    const nextSeg = bestRoute.runs[idx + 1];
+                    const overlap = segment.end - nextSeg.start;
+                    if (overlap > 0) {
+                        const indicator = document.createElement('div');
+                        indicator.style.cssText = 'text-align: center; color: var(--cyan-glow); font-size: 10px; margin: 2px 0;';
+                        indicator.textContent = `↳ overlap ${overlap}%`;
+                        routeEl.appendChild(indicator);
+                    } else if (nextSeg.start === segment.end) {
+                        const indicator = document.createElement('div');
+                        indicator.style.cssText = 'text-align: center; color: var(--emerald); font-size: 10px; margin: 2px 0;';
+                        indicator.textContent = `→ touches at ${segment.end}%`;
+                        routeEl.appendChild(indicator);
+                    }
+                }
+            });
         }
-
-        container.innerHTML = '<div class="empty-state">Grind to unlock routes</div>';
+        container.appendChild(routeEl);
         return;
     }
 
-    const bestRoute = results.routes[0];
-    if (!bestRoute) return;
-
-    const routeEl = document.createElement('div');
-    routeEl.className = 'route-preview-container';
-
-    const header = document.createElement('div');
-    header.className = 'route-preview-header';
-    header.innerHTML = `<span style="font-size: 12px; color: var(--muted-gray);">RECOMMENDED PATH (${bestRoute.segments} segments)</span>`;
-    routeEl.appendChild(header);
-
-    if (bestRoute.runs && bestRoute.runs.length > 0) {
-        bestRoute.runs.forEach((segment, idx) => {
-            const segmentEl = document.createElement('div');
-            segmentEl.className = 'route-segment animated';
-            segmentEl.style.animationDelay = `${idx * 0.12}s`;
-
-            const percentWidth = Math.min(100, (segment.length / 100) * 100);
-            const reliability = segment.length > 30 ? 'high' : segment.length > 15 ? 'medium' : 'low';
-            const isVirtual = segment.type === 'virtual_from0' || segment.type === 'virtual';
-            const segmentStyle = isVirtual ? 'opacity: 0.7; border-left: 3px solid var(--cyan-glow);' : '';
-
-            segmentEl.innerHTML = `
-                <div class="segment-label">
-                    <span class="segment-range">${segment.start}% → ${segment.end}%</span>
-                    <span class="segment-length">(${segment.length}%)</span>
-                    ${isVirtual ? '<span style="font-size: 10px; color: var(--cyan-glow);">from-0 proven</span>' : '<span class="segment-count">${segment.count}x</span>'}
+    // Suggested path when no routes but has connecting data
+    if (bestFrom0 > 0 && connectingRuns.length > 0) {
+        const bestConnect = connectingRuns.sort((a, b) => (b.count || 0) - (a.count || 0))[0];
+        container.innerHTML = `
+            <div class="route-preview-container">
+                <div class="route-preview-header">
+                    <span style="font-size: 12px; color: var(--muted-gray);">SUGGESTED PATH</span>
                 </div>
-                <div class="segment-bar ${reliability}" style="width: ${percentWidth}%; ${segmentStyle}"></div>
-            `;
-            routeEl.appendChild(segmentEl);
-
-            if (idx < bestRoute.runs.length - 1) {
-                const nextSeg = bestRoute.runs[idx + 1];
-                const overlap = segment.end - nextSeg.start;
-                if (overlap > 0) {
-                    const indicator = document.createElement('div');
-                    indicator.style.cssText = 'text-align: center; color: var(--cyan-glow); font-size: 10px; margin: 2px 0;';
-                    indicator.textContent = `↳ overlap ${overlap}%`;
-                    routeEl.appendChild(indicator);
-                } else if (nextSeg.start === segment.end) {
-                    const indicator = document.createElement('div');
-                    indicator.style.cssText = 'text-align: center; color: var(--emerald); font-size: 10px; margin: 2px 0;';
-                    indicator.textContent = `→ touches at ${segment.end}%`;
-                    routeEl.appendChild(indicator);
-                }
-            }
-        });
+                <div class="route-segment animated">
+                    <div class="segment-label">
+                        <span class="segment-range">0% → ${bestFrom0}%</span>
+                        <span class="segment-length">(${bestFrom0}%)</span>
+                        <span style="font-size: 10px; color: var(--cyan-glow);">from-0 proven</span>
+                    </div>
+                    <div class="segment-bar high" style="width: ${bestFrom0}%; opacity: 0.7; border-left: 3px solid var(--cyan-glow);"></div>
+                </div>
+                <div style="text-align: center; color: var(--muted-gray); font-size: 11px; margin: 4px 0;">▼ ${bestConnect.start < bestFrom0 ? 'overlaps at ' + bestConnect.start + '%' : 'touches at ' + bestFrom0 + '%'}</div>
+                <div class="route-segment animated" style="animation-delay: 0.12s">
+                    <div class="segment-label">
+                        <span class="segment-range">${bestConnect.start}% → 100%</span>
+                        <span class="segment-length">(${bestConnect.length}%)</span>
+                    </div>
+                    <div class="segment-bar high" style="width: ${bestConnect.length}%"></div>
+                    <span class="segment-count">${bestConnect.count}x</span>
+                </div>
+            </div>
+        `;
+        return;
     }
 
-    container.appendChild(routeEl);
+    // Only startpos data - explain need for from-0
+    if (bestFrom0 === 0 && startposRuns.length > 0) {
+        container.innerHTML = '<div class="empty-state">Do full from-0 attempts to unlock route analysis.<br><small>Startpos-only data cannot prove level completion paths.</small></div>';
+        return;
+    }
+
+    // Only from-0 data - explain need for endgame practice
+    if (bestFrom0 > 0 && startposRuns.length === 0) {
+        container.innerHTML = `<div class="empty-state">Best from-0: ${bestFrom0}%<br><small>Practice ${bestFrom0}-100% with startpos to see completion routes.</small></div>`;
+        return;
+    }
+
+    container.innerHTML = '<div class="empty-state">Grind to unlock routes</div>';
 }
 
 // ============================================================================
@@ -1610,7 +1678,13 @@ function updateHeroStats(results) {
     document.getElementById('hero-confidence').textContent = results.readiness + '%';
 
     const routesFound = results.routes ? results.routes.length : 0;
-    document.getElementById('hero-routes-found').textContent = routesFound;
+    const hasFrom0 = results.bestFrom0 > 0;
+    const hasStartpos = results.startposAttempts > 0;
+    let routeDisplay = routesFound;
+    if (routesFound === 0 && hasFrom0 && hasStartpos) routeDisplay = '2+ possible';
+    else if (routesFound === 0 && !hasFrom0) routeDisplay = 'need from-0';
+    else if (routesFound === 0 && !hasStartpos) routeDisplay = 'need endgame';
+    document.getElementById('hero-routes-found').textContent = routeDisplay;
 }
 
 // ============================================================================
