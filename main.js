@@ -7,6 +7,14 @@
 
 let analysisResults = null;
 const DEBUG_MODE = false;
+
+// Round to 1 decimal place for display
+function round1(n) {
+    const num = Number(n);
+    if (!isFinite(num)) return '0.0';
+    return (Math.round(num * 10) / 10).toFixed(1);
+}
+
 // Safe number formatting - handles strings from analyzer.js .toFixed() results
 function safeToFixed(value, digits) {
     const num = Number(value);
@@ -692,12 +700,12 @@ function performAnalysis() {
 function displayResults(results) {
     // Session Snapshot
     document.getElementById('total-attempts').textContent = (results.totalAttempts || 0).toLocaleString();
-    document.getElementById('best-from-0').textContent = safeToFixed(results.bestFrom0, 1) + '%';
-    document.getElementById('coverage').textContent = safeToFixed(results.practiceCoverage, 1) + '%';
+    document.getElementById('best-from-0').textContent = round1(results.bestFrom0) + '%';
+    document.getElementById('coverage').textContent = round1(results.practiceCoverage) + '%';
     document.getElementById('mode-status').textContent = formatMode(results.mode || 'standard');
 
     // Readiness Panel
-    document.getElementById('readiness-score').textContent = safeToFixed(results.readiness, 1) + '%';
+    document.getElementById('readiness-score').textContent = round1(results.readiness) + '%';
     document.getElementById('skill-tier').textContent = results.skillTier || 'N/A';
     document.getElementById('consistency-tier').textContent = results.consistencyTier || 'N/A';
     document.getElementById('nerves-tier').textContent = results.nervesTier || 'N/A';
@@ -728,7 +736,7 @@ function displayResults(results) {
 
     // Coach Suggestions
     const openingNote = results.openingPressure && results.openingPressure.isolated
-        ? ` Opening 0-5% is an input spike (${safeToFixed(results.openingPressure.percentage, 1)}%), so warm it up separately.`
+        ? ` Opening 0-5% is an input spike (${round1(results.openingPressure.percentage)}%), so warm it up separately.`
         : '';
     document.getElementById('next-focus').textContent = results.coachSuggestions?.nextAction || 'Keep playing';
     document.getElementById('bridge-gaps').textContent = (results.coachSuggestions?.biggestGap || 'None') + openingNote;
@@ -759,7 +767,7 @@ function displayResults(results) {
     // Overall Grade
     if (results.overallGrade) {
         document.getElementById('overall-grade-tier').textContent = results.overallGrade.tier || 'N/A';
-        document.getElementById('overall-grade-score').textContent = safeToFixed(results.overallGrade?.score, 1);
+        document.getElementById('overall-grade-score').textContent = round1(results.overallGrade?.score);
         document.getElementById('overall-grade-label').textContent = results.overallGrade.tier || 'N/A';
     }
 
@@ -776,7 +784,7 @@ function displayResults(results) {
     // === V7 Metrics ===
     // Completion Probability
     if (results.completionProbability !== undefined) {
-        document.getElementById('completion-probability').textContent = Number(results.completionProbability).toFixed(1) + '%';
+        document.getElementById('completion-probability').textContent = round1(results.completionProbability) + '%';
         document.getElementById('completion-probability-label').textContent =
             results.completionProbability >= 75 ? 'High' :
                 results.completionProbability >= 50 ? 'Medium' : 'Low';
@@ -785,7 +793,7 @@ function displayResults(results) {
     // Progress Velocity
     if (results.progressVelocity) {
         document.getElementById('progress-velocity-label').textContent = results.progressVelocity.label || 'N/A';
-        document.getElementById('progress-velocity-score').textContent = safeToFixed(results.progressVelocity?.score, 1);
+        document.getElementById('progress-velocity-score').textContent = round1(results.progressVelocity?.score);
     }
 
     // Demon Readiness
@@ -816,14 +824,14 @@ function renderDemonReadiness(demonReadiness) {
             html += `
                 <div class="demon-card ${readyClass}">
                     <div class="demon-name">${demon.name}</div>
-                    <div class="demon-readiness-score">${data.readiness}%</div>
+                    <div class="demon-readiness-score">${round1(data.readiness)}%</div>
                     <div class="demon-status">${data.ready ? 'Ready' : 'Not Ready'}</div>
                     <div class="demon-stats">
-                        <div class="stat">Mech: ${safeToFixed(data?.scores?.mechanical, 1)}%</div>
-                        <div class="stat">Cons: ${data.scores.consistency}%</div>
-                        <div class="stat">Endur: ${data.scores.endurance}%</div>
-                        <div class="stat">Nerves: ${data.scores.nerves}%</div>
-                        <div class="stat">Proof: ${data.scores.proof}%</div>
+                        <div class="stat">Mech: ${round1(data?.scores?.mechanical)}%</div>
+                        <div class="stat">Cons: ${round1(data.scores.consistency)}%</div>
+                        <div class="stat">Endur: ${round1(data.scores.endurance)}%</div>
+                        <div class="stat">Nerves: ${round1(data.scores.nerves)}%</div>
+                        <div class="stat">Proof: ${round1(data.scores.proof)}%</div>
                     </div>
                 </div>
             `;
@@ -843,7 +851,7 @@ function populateMostStableRuns(results) {
     const topRun = results.stableRuns[0];
     document.getElementById('top-stable-run').textContent = `${topRun.start}% - ${topRun.end}%`;
 
-    const stabilityScore = topRun?.stabilityScore ? safeToFixed(topRun.stabilityScore, 2) : '--';
+    const stabilityScore = topRun?.stabilityScore ? round1(topRun.stabilityScore) : '--';
     document.getElementById('stability-score').textContent = stabilityScore;
 }
 
@@ -854,9 +862,19 @@ function populateMostDangerousSegment(results) {
         return;
     }
 
-    const mostDangerous = results.deathDistribution[0];
-    document.getElementById('danger-zone').textContent = mostDangerous.segment;
-    document.getElementById('danger-death-count').textContent = mostDangerous.deaths;
+    const clusters = results.deathClusters;
+    if (clusters && clusters.length > 0) {
+        const topCluster = clusters[0];
+        const range = topCluster.start === topCluster.end
+            ? `${topCluster.start}%`
+            : `${topCluster.start}-${topCluster.end}%`;
+        document.getElementById('danger-zone').textContent = `${range} cluster`;
+        document.getElementById('danger-death-count').textContent = topCluster.totalDeaths;
+    } else {
+        const mostDangerous = results.deathDistribution[0];
+        document.getElementById('danger-zone').textContent = mostDangerous.segment;
+        document.getElementById('danger-death-count').textContent = mostDangerous.deaths;
+    }
 }
 
 function populateChokePointsPreview(results) {
@@ -874,15 +892,16 @@ function populateChokePointsPreview(results) {
     const sortedEnds = Object.entries(endPoints).sort((a, b) => b[1] - a[1]);
     const [primaryEnd, count] = sortedEnds[0];
 
-    document.getElementById('primary-choke').textContent = `${primaryEnd}%`;
-    const rate = ((count / results.totalAttempts) * 100).toFixed(1);
+    const chokeLabel = results.nerveChokeType === 'NERVE' ? '🧠 Nerve Choke' : '🔴 Skill Wall';
+    document.getElementById('primary-choke').textContent = `${primaryEnd}% (${chokeLabel})`;
+    const rate = round1((count / results.totalAttempts) * 100);
     document.getElementById('choke-rate').textContent = `${rate}%`;
 }
 
 function populateProgressTrendPreview(results) {
     const bestProgress = results.bestFrom0 || 0;
     const totalAttempts = results.totalAttempts || 1;
-    const efficiency = (bestProgress / totalAttempts * 100).toFixed(2);
+    const efficiency = round1(bestProgress / totalAttempts * 100);
 
     let trend = 'STABLE';
     let trendClass = 'stable';
@@ -905,79 +924,43 @@ function renderRouteSummary(results) {
     const bestFrom0 = results.bestFrom0 || 0;
     const completions = results.completions || 0;
 
-    // DEBUG: Log what we're working with
-    if (DEBUG_MODE) {
-        console.log('renderRouteSummary:', {
-            bestFrom0,
-            completions,
-            routesLength: results.routes?.length,
-            totalRoutes: results.totalRoutes,
-            bestRunsAllLength: results.bestRunsAll?.length,
-            actualRunsLength: results.actualRuns?.length
-        });
+    // If we have valid routes from the analyzer, display them
+    if (results.routes && results.routes.length > 0) {
+        const minSegments = Math.min(...results.routes.map(r => r.segments));
+        const shortestRoutes = results.routes.filter(r => r.segments === minSegments);
+
+        let routeListHTML = shortestRoutes.map((route, idx) => {
+            const routeText = route.route ? route.route.join(' → ') : route.start + '% → ' + route.end + '%';
+            const totalCount = (route.runs || []).reduce((s, seg) => s + (seg.count || 0), 0);
+            const badge = idx === 0 ? ' <span style="color:var(--cyan-glow);font-size:9px;">★ BEST</span>' : '';
+            return '<div style="font-size:11px;color:var(--muted-gray);margin-bottom:2px;">' + routeText + badge + (totalCount > 0 ? ' <span style="color:#8B95A8">(' + totalCount + 'x)</span>' : '') + '</div>';
+        }).join('');
+
+        minRunsEl.innerHTML = '<span style="font-size: 14px; font-weight: 600;">' + minSegments + '</span><br/>' + routeListHTML;
+        totalWaysEl.textContent = (results.totalRoutes || results.routes.length).toLocaleString();
+        return;
     }
 
-    // FORCE: If NO verified completions AND no routes found, show recommendation
-    if (completions === 0 && (!results.routes || results.routes.length === 0)) {
-        totalWaysEl.innerHTML = '0';
+    // No routes found - show status based on progress
+    totalWaysEl.innerHTML = '0';
 
-        if (bestFrom0 > 0 && bestFrom0 < 100) {
-            // Standard case: reached X%, need 2 segments to 100%
-            const recommendedSegments = 2;
+    if (bestFrom0 >= 100 || completions > 0) {
+        minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">✅</span><br/><span style="font-size: 11px; color: var(--muted-gray);">Level Complete!</span>`;
+        totalWaysEl.textContent = Math.max(1, completions).toString();
+    } else if (bestFrom0 > 0) {
+        const connectableRuns = (results.bestRunsAll || []).filter(r => 
+            r.type === 'run' && r.start <= bestFrom0 && r.end === 100
+        );
 
-            let from0Count = 0;
-            let connectCount = 0;
-
-            if (results.bestRunsAll) {
-                results.bestRunsAll.forEach(r => {
-                    if (r.start === 0 && r.end >= bestFrom0) from0Count += r.count;
-                    if (r.start >= bestFrom0 - 5 && r.start <= bestFrom0 + 5 && r.end === 100) connectCount += r.count;
-                });
-            }
-
-            const from0Text = from0Count > 0 ? `${from0Count}x` : '?';
-            const connectText = connectCount > 0 ? `${connectCount}x` : '0x';
-
-            const recommendedRoute = `0-${bestFrom0}% (${from0Text}) + ${bestFrom0}-100% (${connectText})`;
-            minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">${recommendedSegments}</span><br/><span style="font-size: 11px; color: var(--muted-gray);">${recommendedRoute}</span>`;
-        } else if (bestFrom0 === 100) {
-            minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">✅</span><br/><span style="font-size: 11px; color: var(--muted-gray);">Already beaten!</span>`;
+        if (connectableRuns.length > 0) {
+            const bestConnect = connectableRuns.sort((a, b) => (b.count || 0) - (a.count || 0))[0];
+            minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">2</span><br/><span style="font-size: 11px; color: var(--muted-gray);">0-${bestFrom0}% + ${bestConnect.start}-100%<br/>(${bestConnect.count}x)</span>`;
         } else {
-            minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">--</span><br/><span style="font-size: 11px; color: var(--muted-gray);">Start grinding</span>`;
+            minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">--</span><br/><span style="font-size: 11px; color: var(--muted-gray);">Need endgame practice<br/>(${bestFrom0}% best)</span>`;
         }
-        return;
+    } else {
+        minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">--</span><br/><span style="font-size: 11px; color: var(--muted-gray);">Start grinding</span>`;
     }
-
-    // Only show analyzer routes if user HAS verified completions
-    if (!results.routes || results.routes.length === 0) {
-        minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">✅</span><br/><span style="font-size: 11px; color: var(--muted-gray);">Complete!</span>`;
-        totalWaysEl.innerHTML = completions.toString();
-        return;
-    }
-
-    // Find all minimum-segment routes, sorted by reliability score (highest first)
-    const minSegments = Math.min(...results.routes.map(r => r.segments));
-    const shortestRoutes = results.routes
-        .filter(r => r.segments === minSegments)
-        .sort((a, b) => {
-            const scoreA = (a.runs || []).reduce((s, seg) => s + (seg.count || 0), 0);
-            const scoreB = (b.runs || []).reduce((s, seg) => s + (seg.count || 0), 0);
-            return scoreB - scoreA;
-        });
-
-    // Build HTML showing all shortest combinations, best first
-    let routeListHTML = shortestRoutes.map((route, idx) => {
-        const routeText = route.route ? route.route.join(' \u2192 ') : route.start + '% \u2192 ' + route.end + '%';
-        const totalCount = (route.runs || []).reduce((s, seg) => s + (seg.count || 0), 0);
-        const badge = idx === 0 ? ' <span style="color:var(--cyan-glow);font-size:9px;">\u2605 BEST</span>' : '';
-        return '<div style="font-size:11px;color:var(--muted-gray);margin-bottom:2px;">' + routeText + badge + (totalCount > 0 ? ' <span style="color:#8B95A8">(' + totalCount + 'x)</span>' : '') + '</div>';
-    }).join('');
-
-    minRunsEl.innerHTML = '<span style="font-size: 14px; font-weight: 600;">' + minSegments + '</span><br/>' + routeListHTML;
-
-    // Use totalRoutes from analyzer (which counts all paths), fallback to unique routes
-    const totalWays = results.totalRoutes || results.routes.length;
-    totalWaysEl.textContent = totalWays.toLocaleString();
 }
 
 // ============================================================================
@@ -989,19 +972,7 @@ function renderNerveVisualization(nerveChart, passRateChunks) {
     if (!canvas) return;
 
     const parent = canvas.parentElement;
-    const isLDM = document.body.classList.contains('ldm-enabled');
     const existingWarning = parent ? parent.querySelector('.ldm-warning') : null;
-    
-    if (isLDM) {
-        if (parent && !existingWarning) {
-            const w = document.createElement('div');
-            w.className = 'ldm-warning';
-            w.innerHTML = '<span style="font-size: 20px; margin-bottom: 8px; display: block;">\u26a1</span>Performance Mode Active: Visualizations disabled.';
-            parent.insertBefore(w, canvas);
-        }
-        canvas.style.display = 'none';
-        return;
-    }
     
     if (existingWarning) existingWarning.remove();
     canvas.style.display = '';
@@ -1158,19 +1129,7 @@ function renderSkillProgressionCurve(results) {
     if (!canvas) return;
 
     const parent = canvas.parentElement;
-    const isLDM = document.body.classList.contains('ldm-enabled');
     const existingWarning = parent ? parent.querySelector('.ldm-warning') : null;
-    
-    if (isLDM) {
-        if (parent && !existingWarning) {
-            const w = document.createElement('div');
-            w.className = 'ldm-warning';
-            w.innerHTML = '<span style="font-size: 20px; margin-bottom: 8px; display: block;">⚡</span>Performance Mode Active: Charts are disabled.';
-            parent.insertBefore(w, canvas);
-        }
-        canvas.style.display = 'none';
-        return;
-    }
     
     if (existingWarning) existingWarning.remove();
     canvas.style.display = '';
@@ -1347,16 +1306,16 @@ function renderDeathDistribution(deathData) {
         const barContainer = document.createElement('div');
         barContainer.className = 'death-bar-container';
 
-        const barWidth = Math.min(100, parseFloat(item.percentage) * 5);
+        const barWidth = Math.min(100, round1(item.percentage) * 5);
 
-        const riskClass = item.riskLevel === 'high' || item.riskLevel === 'critical' ? 'death-high' :
-            item.riskLevel === 'medium' ? 'death-medium' : 'death-low';
+        const riskClass = item.riskLevel === 'HELL ZONE 💀' ? 'death-high' :
+            item.riskLevel === 'STRESSFUL 🟡' ? 'death-medium' : 'death-low';
 
         barContainer.innerHTML = `
             <div class="death-info">
                 <span class="death-segment">${item.start}-${item.end}%</span>
                 <span class="death-count">${item.deaths} deaths</span>
-                <span class="death-percent">${item.percentage}%</span>
+                <span class="death-percent">${round1(item.percentage)}%</span>
             </div>
             <div class="death-bar-wrapper">
                 <div class="death-bar ${riskClass}" style="width: ${barWidth}%;" 
@@ -1394,63 +1353,74 @@ function handleDeathBarClick(element, data) {
 }
 
 // ============================================================================
-// HEATMAP RENDERING
+// HEATMAP RENDERING — Dual Layer: Death Density + Practice Coverage
 // ============================================================================
 
 function renderHeatmap(segmentData) {
     const container = document.getElementById('heatmap');
     container.innerHTML = '';
 
-    // V6.2 FIX: Practice heatmap uses STARTPOS runs coverage, not from-0 pass rates
-    // This shows where you've actually practiced, not where you died
+    const from0Freq = analysisResults?.from0Freq || {};
     const startposRuns = (analysisResults?.bestRunsAll || []).filter(r => r.type === 'run');
+
+    // Calculate max deaths in any 10% block for normalization
+    let maxBlockDeaths = 0;
+    for (let b = 0; b < 10; b++) {
+        const start = b * 10, end = (b + 1) * 10;
+        let blockDeaths = 0;
+        for (const [p, c] of Object.entries(from0Freq)) {
+            const percent = parseInt(p, 10);
+            if (percent >= start && percent < end) blockDeaths += c;
+        }
+        maxBlockDeaths = Math.max(maxBlockDeaths, blockDeaths);
+    }
 
     for (let b = 0; b < 10; b++) {
         const start = b * 10;
         const end = (b + 1) * 10;
 
-        // Check if any startpos run covers this segment
+        // Death density for this block
+        let blockDeaths = 0;
+        for (const [p, c] of Object.entries(from0Freq)) {
+            const percent = parseInt(p, 10);
+            if (percent >= start && percent < end) blockDeaths += c;
+        }
+
+        // Practice coverage for this block
         const coveringRuns = startposRuns.filter(r => r.start <= start && r.end >= end);
         const totalCoverage = coveringRuns.reduce((sum, r) => sum + (r.count || 0), 0);
-
-        // Also check from-0 death data for context
-        const segment = segmentData.find(s => s.start === start && s.end === end);
 
         const segmentEl = document.createElement('div');
         segmentEl.className = 'heatmap-segment';
         segmentEl.setAttribute('data-label', `${start}-${end}`);
 
-        if (totalCoverage > 0) {
-            // Has startpos practice coverage - color by intensity
-            if (totalCoverage >= 50) {
-                segmentEl.classList.add('safe');
-            } else if (totalCoverage >= 20) {
-                segmentEl.classList.add('low');
-            } else if (totalCoverage >= 5) {
+        // Use CSS classes based on death density thresholds (matching the legend)
+        if (maxBlockDeaths > 0 && blockDeaths > 0) {
+            const ratio = blockDeaths / maxBlockDeaths;
+            if (ratio >= 0.7) {
+                segmentEl.classList.add('high');
+            } else if (ratio >= 0.3) {
                 segmentEl.classList.add('medium');
             } else {
-                segmentEl.classList.add('high');
-            }
-            segmentEl.title = `Segment ${start}%-${end}%: ${totalCoverage} startpos runs covering this area`;
-        } else if (segment && segment.passRate !== null) {
-            // No startpos data but has from-0 pass rate data
-            if (segment.passRate < 30) {
-                segmentEl.classList.add('high');
-            } else if (segment.passRate < 60) {
-                segmentEl.classList.add('medium');
-            } else if (segment.passRate < 80) {
                 segmentEl.classList.add('low');
-            } else {
-                segmentEl.classList.add('safe');
             }
-            segmentEl.title = `Segment ${start}%-${end}%: ${safeToFixed(segment?.passRate, 1)}% pass rate (from-0 only, no startpos practice)`;
-        } else if (segment && segment.hasCoverage) {
-            segmentEl.style.background = 'rgba(255, 255, 255, 0.08)';
-            segmentEl.title = `Segment ${start}%-${end}%: Startpos only — no from-0 data`;
         } else {
-            segmentEl.style.background = 'rgba(255, 255, 255, 0.03)';
-            segmentEl.title = `Segment ${start}%-${end}%: No practice data`;
+            segmentEl.classList.add('safe');
         }
+
+        // Overlay: practice coverage indicator (cyan border)
+        if (totalCoverage > 0) {
+            const practiceIntensity = Math.min(1, totalCoverage / 50);
+            segmentEl.style.boxShadow = `inset 0 0 20px rgba(97, 216, 255, ${0.2 + practiceIntensity * 0.4})`;
+            segmentEl.style.borderLeft = `3px solid rgba(97, 216, 255, ${0.5 + practiceIntensity * 0.5})`;
+        }
+
+        // Tooltip with both death and practice info
+        const deathText = blockDeaths > 0 ? `Deaths: ${blockDeaths}` : 'Deaths: 0';
+        const practiceText = totalCoverage > 0 ? `Practice: ${totalCoverage}` : 'Practice: 0';
+        const passRate = segmentData.find(s => s.start === start && s.end === end);
+        const passText = passRate && passRate.passRate !== null ? ` | Pass: ${round1(passRate.passRate)}%` : '';
+        segmentEl.title = `Segment ${start}%-${end}%: ${deathText} | ${practiceText}${passText}`;
 
         container.appendChild(segmentEl);
     }
@@ -1464,22 +1434,17 @@ function renderRoutePath(results) {
     const container = document.getElementById('route-path');
     container.innerHTML = '';
 
-    // V6.2: Show actual completion ROUTES with overlap support
     if (!results || !results.routes || results.routes.length === 0) {
-        // Check if we have enough data to suggest a theoretical route
         const bestFrom0 = results?.bestFrom0 || 0;
         const startposRuns = (results?.bestRunsAll || []).filter(r => r.type === 'run');
-
-        // Find if there's a run that connects to bestFrom0
         const connectingRuns = startposRuns.filter(r => r.start <= bestFrom0 && r.end === 100);
 
         if (bestFrom0 > 0 && connectingRuns.length > 0) {
-            // We can suggest a 2-run route even if BFS didn't find it
             const bestConnect = connectingRuns.sort((a, b) => (b.count || 0) - (a.count || 0))[0];
             container.innerHTML = `
                 <div class="route-preview-container">
                     <div class="route-preview-header">
-                        <span style="font-size: 12px; color: var(--muted-gray);">SUGGESTED PATH (Overlap Enabled)</span>
+                        <span style="font-size: 12px; color: var(--muted-gray);">SUGGESTED PATH</span>
                     </div>
                     <div class="route-segment animated">
                         <div class="segment-label">
@@ -1507,7 +1472,6 @@ function renderRoutePath(results) {
         return;
     }
 
-    // Get best (shortest) route - most reliable
     const bestRoute = results.routes[0];
     if (!bestRoute) return;
 
@@ -1516,10 +1480,9 @@ function renderRoutePath(results) {
 
     const header = document.createElement('div');
     header.className = 'route-preview-header';
-    header.innerHTML = `<span style="font-size: 12px; color: var(--muted-gray);">RECOMMENDED PATH</span>`;
+    header.innerHTML = `<span style="font-size: 12px; color: var(--muted-gray);">RECOMMENDED PATH (${bestRoute.segments} segments)</span>`;
     routeEl.appendChild(header);
 
-    // Show each segment in the best route with staggered animation
     if (bestRoute.runs && bestRoute.runs.length > 0) {
         bestRoute.runs.forEach((segment, idx) => {
             const segmentEl = document.createElement('div');
@@ -1528,7 +1491,6 @@ function renderRoutePath(results) {
 
             const percentWidth = Math.min(100, (segment.length / 100) * 100);
             const reliability = segment.length > 30 ? 'high' : segment.length > 15 ? 'medium' : 'low';
-
             const isVirtual = segment.type === 'virtual_from0' || segment.type === 'virtual';
             const segmentStyle = isVirtual ? 'opacity: 0.7; border-left: 3px solid var(--cyan-glow);' : '';
 
@@ -1536,21 +1498,25 @@ function renderRoutePath(results) {
                 <div class="segment-label">
                     <span class="segment-range">${segment.start}% → ${segment.end}%</span>
                     <span class="segment-length">(${segment.length}%)</span>
-                    ${isVirtual ? '<span style="font-size: 10px; color: var(--cyan-glow);">from-0</span>' : ''}
+                    ${isVirtual ? '<span style="font-size: 10px; color: var(--cyan-glow);">from-0 proven</span>' : '<span class="segment-count">${segment.count}x</span>'}
                 </div>
                 <div class="segment-bar ${reliability}" style="width: ${percentWidth}%; ${segmentStyle}"></div>
-                <span class="segment-count">${segment.count}x</span>
             `;
             routeEl.appendChild(segmentEl);
 
-            // Show overlap indicator if next segment overlaps
             if (idx < bestRoute.runs.length - 1) {
                 const nextSeg = bestRoute.runs[idx + 1];
-                if (nextSeg.start < segment.end) {
-                    const overlapIndicator = document.createElement('div');
-                    overlapIndicator.style.cssText = 'text-align: center; color: var(--cyan-glow); font-size: 10px; margin: 2px 0; opacity: 0.7;';
-                    overlapIndicator.textContent = `↳ overlaps ${segment.end - nextSeg.start}%`;
-                    routeEl.appendChild(overlapIndicator);
+                const overlap = segment.end - nextSeg.start;
+                if (overlap > 0) {
+                    const indicator = document.createElement('div');
+                    indicator.style.cssText = 'text-align: center; color: var(--cyan-glow); font-size: 10px; margin: 2px 0;';
+                    indicator.textContent = `↳ overlap ${overlap}%`;
+                    routeEl.appendChild(indicator);
+                } else if (nextSeg.start === segment.end) {
+                    const indicator = document.createElement('div');
+                    indicator.style.cssText = 'text-align: center; color: var(--emerald); font-size: 10px; margin: 2px 0;';
+                    indicator.textContent = `→ touches at ${segment.end}%`;
+                    routeEl.appendChild(indicator);
                 }
             }
         });
@@ -1809,7 +1775,7 @@ function showStableRuns() {
 
     const runs = analysisResults.stableRuns.slice(0, count);
     container.innerHTML = runs.map((run, index) => {
-        const stabilityScore = run?.stabilityScore ? safeToFixed(run.stabilityScore, 2) : '--';
+        const stabilityScore = run?.stabilityScore ? round1(run.stabilityScore) : '--';
         return `
         <div class="detail-item" style="animation-delay: ${index * 0.05}s">
             <span>${index + 1}. ${run.start}% - ${run.end}%</span>
@@ -2015,7 +1981,7 @@ function populateProgressTrend() {
 
     const bestProgress = analysisResults.bestFrom0 || 0;
     const totalAttempts = analysisResults.totalAttempts || 1;
-    const efficiency = (bestProgress / totalAttempts * 100).toFixed(2);
+    const efficiency = round1(bestProgress / totalAttempts * 100);
 
     let trend = 'STABLE';
     let trendColor = '#61D8FF';
@@ -2168,7 +2134,7 @@ function populatePracticeMap() {
                 else if (segment.passRate < 60) segmentEl.classList.add('medium');
                 else if (segment.passRate < 80) segmentEl.classList.add('low');
                 else segmentEl.classList.add('safe');
-                segmentEl.title = `${start}%-${end}%: ${safeToFixed(segment?.passRate, 1)}% pass rate`;
+                segmentEl.title = `${start}%-${end}%: ${round1(segment?.passRate)}% pass rate`;
             } else {
                 segmentEl.style.background = 'rgba(255, 255, 255, 0.05)';
                 segmentEl.title = `${start}%-${end}%: No data`;
@@ -2290,7 +2256,7 @@ function renderPassRateChunks(chunks) {
         item.style.animationDelay = `${idx * 0.08}s`;
         item.innerHTML = `
             <div class="pass-rate-label">${chunk.chunk}</div>
-            <div class="pass-rate-value">${safeToFixed(chunk?.passRate, 1)}% pass</div>
+            <div class="pass-rate-value">${round1(chunk?.passRate)}% pass</div>
         `;
         container.appendChild(item);
     });
@@ -2307,7 +2273,7 @@ function renderNerveChartPreview(chartPoints) {
     const countEl = document.getElementById('nerve-critical-count');
 
     if (riskEl) {
-        const score = safeToFixed(highestRisk?.nerveScore, 1);
+        const score = round1(highestRisk?.nerveScore);
         riskEl.textContent = `${highestRisk.percent || 0}% (${score} stress)`;
     }
     if (countEl) countEl.textContent = criticalZones.length;
@@ -2332,23 +2298,23 @@ function showOverallGrade() {
         </div>
         <div class="detail-item" style="animation-delay: 0.1s">
             <span>Grade Score</span>
-            <span class="animated-number" style="font-size: 18px; font-weight: 800;">${safeToFixed(grade?.score, 1)}/100</span>
+            <span class="animated-number" style="font-size: 18px; font-weight: 800;">${round1(grade?.score)}/100</span>
         </div>
         <div class="detail-item" style="animation-delay: 0.15s">
             <span>Skill Component</span>
-            <span class="animated-number">${safeToFixed(breakdown?.skillComponent, 1)}%</span>
+            <span class="animated-number">${round1(breakdown?.skillComponent)}%</span>
         </div>
         <div class="detail-item" style="animation-delay: 0.2s">
             <span>Consistency Component</span>
-            <span class="animated-number">${safeToFixed(breakdown?.consistencyComponent, 1)}%</span>
+            <span class="animated-number">${round1(breakdown?.consistencyComponent)}%</span>
         </div>
         <div class="detail-item" style="animation-delay: 0.25s">
             <span>Readiness Component</span>
-            <span class="animated-number">${safeToFixed(breakdown?.readinessComponent, 1)}%</span>
+            <span class="animated-number">${round1(breakdown?.readinessComponent)}%</span>
         </div>
         <div class="detail-item" style="animation-delay: 0.3s">
             <span>Proof Component (Completions)</span>
-            <span class="animated-number">${safeToFixed(breakdown?.proofComponent, 1)}%</span>
+            <span class="animated-number">${round1(breakdown?.proofComponent)}%</span>
         </div>
     `;
     animateNumbers();
@@ -2363,7 +2329,7 @@ function showPassRateChunksDetail() {
 
     const chunks = analysisResults.passRateByChunks || [];
     container.innerHTML = chunks.map((chunk, idx) => {
-        const passRate = safeToFixed(chunk?.passRate, 1);
+        const passRate = round1(chunk?.passRate);
         const riskClass = chunk.passRate >= 80 ? 'safe' : chunk.passRate >= 60 ? 'low' : chunk.passRate >= 30 ? 'medium' : 'high';
         return `
             <div class="detail-item nerve-risk-item ${riskClass}" style="animation-delay: ${idx * 0.05}s">
@@ -2382,15 +2348,10 @@ function showNerveChartDetail() {
         return;
     }
 
-    if (document.body.classList.contains('ldm-enabled')) {
-        container.innerHTML = '<div class="ldm-warning">Performance Mode Active: Detail charts are disabled.</div>';
-        return;
-    }
-
     const chart = (analysisResults.nerveChart || []).filter((_, i) => i % 2 === 0);
     container.innerHTML = chart.map((point, idx) => {
         const riskClass = point.riskZone === 'CRITICAL' ? 'critical' : point.riskZone === 'HIGH' ? 'high' : point.riskZone === 'MEDIUM' ? 'medium' : 'low';
-        const nerveScore = safeToFixed(point?.nerveScore, 1);
+        const nerveScore = round1(point?.nerveScore);
         return `
             <div class="nerve-risk-item ${riskClass}" style="animation-delay: ${idx * 0.05}s">
                 <span class="nerve-percent">${point.percent}%</span>
