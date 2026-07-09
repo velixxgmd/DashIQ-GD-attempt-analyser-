@@ -1,7 +1,7 @@
 /**
- * DASHIQ — MAIN JAVASCRIPT v3.0
+ * DASHIQ — MAIN JAVASCRIPT v8.3-PRO
  * UI Interactions, DOM Manipulation, Aesthetic Effects
- * Fully synchronized with analyzer.js v6.1 / Engine v7.0
+ * Fully synchronized with analyzer.js v8.3-PRO / Engine v8.3-PRO
  * ============================================================
  */
 
@@ -13,7 +13,7 @@ function round1(n) {
     const num = Number(n);
     if (!isFinite(num)) return '0.0';
     const rounded = Math.round(num * 10) / 10;
-    return rounded.toFixed(1);
+    return safeToFixed(rounded, 1);
 }
 
 // Safe number formatting - handles strings from analyzer.js .toFixed() results
@@ -147,6 +147,7 @@ document.addEventListener('DOMContentLoaded', function () {
     initializeGeometricShapes();
     initializeConstellations();
     initializeDifficultyChips();
+    initializeDurationControls();
     initializeAnalyzeButton();
     initializeNavigation();
     initializeTextarea();
@@ -161,9 +162,78 @@ document.addEventListener('DOMContentLoaded', function () {
     initializeClearButton();
     initializeTierBadges();
     initializeMobileButtonFix();
+    initializeExportButton();
 
     setLoading(false);
 });
+
+function initializeDurationControls() {
+    const lengthSelect = document.getElementById('length-category-select');
+    const useCustom = document.getElementById('use-custom-length');
+    const durationInput = document.getElementById('duration-input');
+    const modeToggle = document.getElementById('duration-mode-toggle');
+    const confidenceBadge = document.getElementById('duration-confidence-badge');
+
+    if (!lengthSelect || !useCustom || !durationInput) return;
+
+    let durationMode = typeof DURATION_MODE !== 'undefined' ? DURATION_MODE.NORMAL : 'normal';
+
+    const updateModeUI = () => {
+        if (!modeToggle) return;
+        const isHour = durationMode === (typeof DURATION_MODE !== 'undefined' ? DURATION_MODE.HOUR : 'hour');
+        modeToggle.textContent = isHour ? 'HH:MM:SS' : 'MM:SS';
+        durationInput.placeholder = isHour ? 'HH:MM:SS (e.g. 01:15:30)' : 'MM:SS (e.g. 03:20)';
+    };
+
+    const sync = () => {
+        const customEnabled = useCustom.checked;
+        durationInput.disabled = !customEnabled;
+        if (modeToggle) modeToggle.disabled = !customEnabled;
+
+        if (!customEnabled) durationInput.value = '';
+
+        if (customEnabled && durationInput.value.trim() && typeof detectDurationMode === 'function') {
+            const detected = detectDurationMode(durationInput.value.trim());
+            if (detected === DURATION_MODE.HOUR || detected === DURATION_MODE.NORMAL) {
+                durationMode = detected;
+            }
+        }
+        updateModeUI();
+
+        if (confidenceBadge) {
+            const hasCustom = customEnabled && durationInput.value.trim().length > 0;
+            const hasCategory = !hasCustom && lengthSelect.value;
+            let confidence = hasCustom ? 'High' : hasCategory ? 'Medium' : 'Low';
+            if (hasCustom && typeof parseDurationInput === 'function') {
+                const parsed = parseDurationInput(durationInput.value.trim(), durationMode);
+                if (!parsed.valid) confidence = 'Invalid';
+            }
+            confidenceBadge.textContent = `Confidence: ${confidence}`;
+            confidenceBadge.className = `duration-confidence-badge ${confidence.toLowerCase()}`;
+        }
+    };
+
+    useCustom.addEventListener('change', sync);
+    durationInput.addEventListener('input', sync);
+    lengthSelect.addEventListener('change', sync);
+
+    if (modeToggle) {
+        modeToggle.addEventListener('click', () => {
+            if (!useCustom.checked) return;
+            durationMode = durationMode === DURATION_MODE.HOUR ? DURATION_MODE.NORMAL : DURATION_MODE.HOUR;
+            updateModeUI();
+            sync();
+        });
+    }
+
+    durationInput.dataset.durationMode = durationMode;
+    Object.defineProperty(durationInput, 'durationMode', {
+        get() { return durationMode; },
+        configurable: true
+    });
+
+    sync();
+}
 
 // ============================================================================
 // AESTHETIC EFFECTS — ENHANCED PARTICLES
@@ -175,16 +245,17 @@ function initializeParticles() {
 
     const isLDM = document.body.classList.contains('ldm-enabled');
     const isMobile = document.body.classList.contains('mobile-mode');
-    const count = (isLDM || isMobile) ? 0 : 80;
+    const count = (isLDM || isMobile) ? 0 : 105;
 
     for (let i = 0; i < count; i++) {
         const p = document.createElement('div');
         p.className = 'particle';
         p.style.left = Math.random() * 100 + '%';
-        p.style.animationDuration = (10 + Math.random() * 25) + 's';
-        p.style.animationDelay = (Math.random() * 20) + 's';
-        p.style.opacity = (0.2 + Math.random() * 0.5).toString();
-        const size = 1 + Math.random() * 3;
+        p.style.animationDuration = (12 + Math.random() * 28) + 's';
+        p.style.animationDelay = (Math.random() * 24) + 's';
+        p.style.opacity = (0.25 + Math.random() * 0.55).toString();
+        if (Math.random() > 0.55) p.classList.add('drift-mode');
+        const size = 1 + Math.random() * 3.5;
         p.style.width = size + 'px';
         p.style.height = size + 'px';
         container.appendChild(p);
@@ -197,15 +268,15 @@ function initializeSparkles() {
 
     const isLDM = document.body.classList.contains('ldm-enabled');
     const isMobile = document.body.classList.contains('mobile-mode');
-    const count = (isLDM || isMobile) ? 0 : 25;
+    const count = (isLDM || isMobile) ? 0 : 26;
 
     for (let i = 0; i < count; i++) {
         const s = document.createElement('div');
         s.className = 'sparkle';
         s.style.left = Math.random() * 100 + '%';
         s.style.top = Math.random() * 100 + '%';
-        s.style.animationDuration = (2 + Math.random() * 4) + 's';
-        s.style.animationDelay = (Math.random() * 5) + 's';
+        s.style.animationDuration = (2.5 + Math.random() * 4.5) + 's';
+        s.style.animationDelay = (Math.random() * 6) + 's';
         const size = 2 + Math.random() * 4;
         s.style.width = size + 'px';
         s.style.height = size + 'px';
@@ -219,15 +290,15 @@ function initializeDustMotes() {
 
     const isLDM = document.body.classList.contains('ldm-enabled');
     const isMobile = document.body.classList.contains('mobile-mode');
-    const count = (isLDM || isMobile) ? 0 : 40;
+    const count = (isLDM || isMobile) ? 0 : 34;
 
     for (let i = 0; i < count; i++) {
         const d = document.createElement('div');
         d.className = 'dust-mote';
         d.style.left = Math.random() * 100 + '%';
-        d.style.animationDuration = (20 + Math.random() * 30) + 's';
-        d.style.animationDelay = (Math.random() * 20) + 's';
-        d.style.opacity = (0.1 + Math.random() * 0.3).toString();
+        d.style.animationDuration = (22 + Math.random() * 32) + 's';
+        d.style.animationDelay = (Math.random() * 24) + 's';
+        d.style.opacity = (0.08 + Math.random() * 0.32).toString();
         container.appendChild(d);
     }
 }
@@ -239,16 +310,16 @@ function initializeGeometricShapes() {
     const isLDM = document.body.classList.contains('ldm-enabled');
     const isMobile = document.body.classList.contains('mobile-mode');
     const shapes = ['triangle', 'square', 'circle', 'hex', 'pentagon', 'star', 'diamond', 'octagon'];
-    const count = (isLDM || isMobile) ? 0 : 16;
+    const count = (isLDM || isMobile) ? 0 : 12;
 
     for (let i = 0; i < count; i++) {
         const shape = document.createElement('div');
         shape.className = `geo-shape ${shapes[Math.floor(Math.random() * shapes.length)]}`;
         shape.style.left = Math.random() * 100 + '%';
         shape.style.top = Math.random() * 100 + '%';
-        shape.style.animationDuration = (15 + Math.random() * 20) + 's';
-        shape.style.animationDelay = (Math.random() * 10) + 's';
-        shape.style.transform = `scale(${0.5 + Math.random()})`;
+        shape.style.animationDuration = (16 + Math.random() * 22) + 's';
+        shape.style.animationDelay = (Math.random() * 12) + 's';
+        shape.style.transform = `scale(${0.4 + Math.random() * 0.8})`;
         container.appendChild(shape);
     }
 }
@@ -272,17 +343,17 @@ function initializeConstellations() {
 
     // Generate truly random stars across entire viewport - NOT fixed grid
     const stars = [];
-    const starCount = 30 + Math.floor(Math.random() * 20); // 30-50 random stars
+    const starCount = 24 + Math.floor(Math.random() * 10);
 
     for (let i = 0; i < starCount; i++) {
         stars.push({
             x: Math.random() * 1000,
             y: Math.random() * 1000,
-            brightness: 0.2 + Math.random() * 0.8,
-            size: 1 + Math.random() * 3,
-            twinkleDuration: 1.5 + Math.random() * 3,
-            twinkleDelay: Math.random() * 4,
-            color: ['rgba(97, 216, 255, ', 'rgba(255, 79, 216, ', 'rgba(139, 92, 246, ', 'rgba(16, 185, 129, '][Math.floor(Math.random() * 4)]
+            brightness: 0.25 + Math.random() * 0.75,
+            size: 1.2 + Math.random() * 3,
+            twinkleDuration: 2 + Math.random() * 3.5,
+            twinkleDelay: Math.random() * 5,
+            color: ['rgba(97, 216, 255, ', 'rgba(255, 79, 216, ', 'rgba(139, 92, 246, ', 'rgba(16, 185, 129, ', 'rgba(45, 107, 255, '][Math.floor(Math.random() * 5)]
         });
     }
 
@@ -291,7 +362,7 @@ function initializeConstellations() {
         const distances = stars.map((s, i) => ({
             idx: i,
             dist: Math.hypot(s.x - star.x, s.y - star.y)
-        })).sort((a, b) => a.dist - b.dist).slice(1, Math.floor(2 + Math.random() * 3)); // Connect to 2-4 nearest neighbors
+        })).sort((a, b) => a.dist - b.dist).slice(1, Math.floor(4 + Math.random() * 3)); // Connect to 4-6 nearest neighbors for richer constellations
 
         distances.forEach((neighbor, nidx) => {
             const otherStar = stars[neighbor.idx];
@@ -302,12 +373,12 @@ function initializeConstellations() {
             line.setAttribute('y2', otherStar.y);
 
             // Variable opacity per line for organic feel + random colors
-            const baseOpacity = 0.08 + Math.random() * 0.3;
+            const baseOpacity = 0.1 + Math.random() * 0.25;
             const lineColor = star.color + baseOpacity + ')';
             line.setAttribute('stroke', lineColor);
-            line.setAttribute('stroke-width', 0.3 + Math.random() * 0.6);
+            line.setAttribute('stroke-width', 0.35 + Math.random() * 0.55);
             line.setAttribute('class', 'constellation-line');
-            line.style.animationDelay = `${Math.random() * 3}s`;
+            line.style.animationDelay = `${Math.random() * 4}s`;
             svg.appendChild(line);
         });
     });
@@ -417,6 +488,11 @@ function initializeKeyboardShortcuts() {
             }
         }
 
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x') {
+            e.preventDefault();
+            exportAnalysisResults();
+        }
+
         if (e.key === 'Escape') {
             const visibleDetail = document.querySelector('.detail-page:not(.hidden)');
             if (visibleDetail) closeDetailPage();
@@ -424,6 +500,13 @@ function initializeKeyboardShortcuts() {
     });
 }
 
+
+function initializeExportButton() {
+    const exportBtn = document.getElementById('export-data-btn');
+    if (exportBtn) {
+        exportBtn.addEventListener('click', exportAnalysisResults);
+    }
+}
 function initializeTierBadges() {
     // Apply tier classes dynamically
     const tierMap = {
@@ -577,6 +660,11 @@ function initializeTextarea() {
             this.value = lines.slice(0, -1).join('\n');
             performAnalysis();
         }
+
+        if (lastLine === 'export') {
+            this.value = lines.slice(0, -1).join('\n');
+            exportAnalysisResults();
+        }
     });
 
     textarea.addEventListener('keydown', function (e) {
@@ -651,6 +739,21 @@ function performAnalysis() {
     }
 
     const difficultyMultiplier = parseFloat(difficultySelect.value);
+    const difficultyLabel = (difficultySelect.options[difficultySelect.selectedIndex]?.textContent || '').trim().toLowerCase();
+
+    const options = { difficultyLabel };
+    const lengthSelect = document.getElementById('length-category-select');
+    const useCustom = document.getElementById('use-custom-length');
+    const durationInput = document.getElementById('duration-input');
+    if (lengthSelect && lengthSelect.value) {
+        options.officialLengthCategory = lengthSelect.value;
+    }
+    if (useCustom && durationInput && useCustom.checked && durationInput.value.trim()) {
+        options.duration = durationInput.value.trim();
+        if (durationInput.durationMode) {
+            options.durationMode = durationInput.durationMode;
+        }
+    }
 
     setLoading(true);
 
@@ -658,7 +761,7 @@ function performAnalysis() {
         try {
             if (DEBUG_MODE) console.log('Starting analysis with input length:', inputText.length);
 
-            const results = analyzeInput(inputText, difficultyMultiplier);
+            const results = analyzeInput(inputText, difficultyMultiplier, options);
 
             if (DEBUG_MODE) console.log('Analysis results:', results);
 
@@ -702,7 +805,7 @@ function displayResults(results) {
     // Session Snapshot
     document.getElementById('total-attempts').textContent = (results.totalAttempts || 0).toLocaleString();
     document.getElementById('best-from-0').textContent = round1(results.bestFrom0) + '%';
-    document.getElementById('coverage').textContent = round1(results.practiceCoverage) + '%';
+    document.getElementById('coverage').textContent = round1(results.coverage) + '%';
     document.getElementById('mode-status').textContent = formatMode(results.mode || 'standard');
 
     // Readiness Panel
@@ -724,16 +827,18 @@ function displayResults(results) {
     renderRoutePath(results);
     renderRouteSummary(results);
     document.getElementById('route-reliability').textContent = results.routeReliability || '--';
-    document.getElementById('route-segments').textContent = results.routeSegments || 0;
+    document.getElementById('route-segments').textContent = (results.routeSegments || 0).toLocaleString();
 
     // Choke Points
     populateChokePointsPreview(results);
 
-    // Nerve Chart Visualization
+    // BUG FIX v8.3: Canvas rendering with ResizeObserver + IntersectionObserver for mobile
+    // Render immediately, then set up observers for re-render on resize/visibility
     renderNerveVisualization(results.nerveChart || [], results.passRateByChunks || []);
-
-    // Skill Progression Curve
     renderSkillProgressionCurve(results);
+
+    // Set up canvas observers for mobile robustness
+    setupCanvasObservers(results);
 
     // Coach Suggestions
     const openingNote = results.openingPressure && results.openingPressure.isolated
@@ -751,6 +856,10 @@ function displayResults(results) {
     // Top Runs
     renderTopRuns(results.bestRuns || [], results.longestRuns || []);
 
+    // Data availability flags
+    const hasFrom0 = (results.from0Deaths || 0) > 0 || (results.sourceSeparation?.sourceCounts?.from0 || 0) > 0;
+    const hasStartpos = results.startposAttempts > 0;
+
     // Coach Section - handle all data scenarios
     if (!hasFrom0 && hasStartpos) {
         // Only startpos data
@@ -761,11 +870,11 @@ function displayResults(results) {
         document.getElementById('today-focus').textContent = 'Today: 20-30 full from-0 attempts. Track your deaths and best progress.';
     } else if (hasFrom0 && !hasStartpos && results.bestFrom0 < 100) {
         // Only from-0 data, not completed
-        document.getElementById('next-action').textContent = `Practice ${results.bestFrom0}-100% with startpos to build endgame consistency.`;
-        document.getElementById('biggest-gap').textContent = `No startpos coverage past ${results.bestFrom0}%. Need endgame practice.`;
-        document.getElementById('best-route').textContent = `Best from-0: ${results.bestFrom0}%. Practice the final ${100 - results.bestFrom0}% in isolation.`;
-        document.getElementById('strong-areas').textContent = `You can consistently reach ${results.bestFrom0}%. Build from there.`;
-        document.getElementById('today-focus').textContent = `Today: 50% from-0 attempts, 50% ${results.bestFrom0}-100% startpos practice.`;
+        document.getElementById('next-action').textContent = `Practice ${round1(results.bestFrom0)}-100% with startpos to build endgame consistency.`;
+        document.getElementById('biggest-gap').textContent = `No startpos coverage past ${round1(results.bestFrom0)}%. Need endgame practice.`;
+        document.getElementById('best-route').textContent = `Best from-0: ${round1(results.bestFrom0)}%. Practice the final ${round1(100 - results.bestFrom0)}% in isolation.`;
+        document.getElementById('strong-areas').textContent = `You can consistently reach ${round1(results.bestFrom0)}%. Build from there.`;
+        document.getElementById('today-focus').textContent = `Today: 50% from-0 attempts, 50% ${round1(results.bestFrom0)}-100% startpos practice.`;
     } else {
         // Normal case (both data types or completed)
         document.getElementById('next-action').textContent = results.coachSuggestions?.nextAction || 'Keep playing';
@@ -787,6 +896,43 @@ function displayResults(results) {
         document.getElementById('overall-grade-tier').textContent = results.overallGrade.tier || 'N/A';
         document.getElementById('overall-grade-score').textContent = round1(results.overallGrade?.score);
         document.getElementById('overall-grade-label').textContent = results.overallGrade.tier || 'N/A';
+    }
+    const confidenceEl = document.getElementById('confidence-level');
+    if (confidenceEl) {
+        const confidence = results.confidenceLevel || results.confidenceReport?.confidenceLevel || 'LOW';
+        confidenceEl.textContent = confidence;
+        confidenceEl.className = `preview-value tier-badge ${confidence === 'HIGH' ? 'tier-a' : confidence === 'MEDIUM' ? 'tier-b' : 'tier-c'}`;
+    }
+
+    const hasDuration = results.durationMetadata?.enabled;
+    const enduranceEl = document.getElementById('endurance-rating');
+    if (enduranceEl) {
+        const v = results.durationMetrics?.enduranceRating;
+        enduranceEl.textContent = v === null || v === undefined ? '--' : `${round1(v)}%`;
+    }
+    const deathDensityRawEl = document.getElementById('death-density-raw');
+    if (deathDensityRawEl) {
+        const v = results.durationMetrics?.deathDensity?.rawDeathsPerMinute;
+        deathDensityRawEl.textContent = v === null || v === undefined ? '--' : safeToFixed(v, 2);
+    }
+    const deathDensityScoreEl = document.getElementById('death-density-score');
+    if (deathDensityScoreEl) {
+        const v = results.durationMetrics?.deathDensity?.normalizedScore;
+        deathDensityScoreEl.textContent = v === null || v === undefined ? '--' : safeToFixed(v, 3);
+    }
+    const practiceDensityEl = document.getElementById('practice-density');
+    if (practiceDensityEl) {
+        const v = results.durationMetrics?.practiceDensity;
+        practiceDensityEl.textContent = v === null || v === undefined ? '--' : safeToFixed(v, 2);
+    }
+    const durationCategoryEl = document.getElementById('duration-category');
+    if (durationCategoryEl) {
+        durationCategoryEl.textContent = hasDuration ? (results.durationMetadata?.durationCategory || 'unknown') : '--';
+        durationCategoryEl.className = `stat-value tier-badge ${hasDuration ? '' : 'muted'}`;
+    }
+    const durationConfidenceEl = document.getElementById('duration-confidence');
+    if (durationConfidenceEl) {
+        durationConfidenceEl.textContent = hasDuration ? (results.durationMetadata?.durationConfidence || 'low') : '--';
     }
 
     // Pass Rate Chunks
@@ -873,6 +1019,16 @@ function populateMostStableRuns(results) {
     document.getElementById('stability-score').textContent = stabilityScore;
 }
 
+function getHotspotDisplay(results) {
+    if (results.hotspots && results.hotspots.weakestSection) {
+        return results.hotspots.weakestSection;
+    }
+    if (results.deathDistribution && results.deathDistribution.length > 0) {
+        return results.deathDistribution[0];
+    }
+    return null;
+}
+
 function populateMostDangerousSegment(results) {
     if (!results.deathDistribution || results.deathDistribution.length === 0) {
         document.getElementById('danger-zone').textContent = '--';
@@ -880,19 +1036,16 @@ function populateMostDangerousSegment(results) {
         return;
     }
 
-    const clusters = results.deathClusters;
-    if (clusters && clusters.length > 0) {
-        const topCluster = clusters[0];
-        const range = topCluster.start === topCluster.end
-            ? `${topCluster.start}%`
-            : `${topCluster.start}-${topCluster.end}%`;
-        document.getElementById('danger-zone').textContent = `${range} cluster`;
-        document.getElementById('danger-death-count').textContent = topCluster.totalDeaths;
-    } else {
-        const mostDangerous = results.deathDistribution[0];
-        document.getElementById('danger-zone').textContent = mostDangerous.segment;
-        document.getElementById('danger-death-count').textContent = mostDangerous.deaths;
+    const hotspot = getHotspotDisplay(results);
+    if (hotspot) {
+        const label = hotspot.range || hotspot.segment || `${hotspot.start}-${hotspot.end}%`;
+        document.getElementById('danger-zone').textContent = label;
+        document.getElementById('danger-death-count').textContent = hotspot.deaths;
+        return;
     }
+
+    document.getElementById('danger-zone').textContent = '--';
+    document.getElementById('danger-death-count').textContent = '--';
 }
 
 function populateChokePointsPreview(results) {
@@ -950,7 +1103,9 @@ function renderRouteSummary(results) {
             routesLength: results.routes?.length,
             totalRoutes: results.totalRoutes,
             bestRunsAllLength: results.bestRunsAll?.length,
-            actualRunsLength: results.actualRuns?.length
+            actualRunsLength: results.actualRuns?.length,
+            from0RunsLength: results.from0Runs?.length,
+            startposRunsLength: results.startposRuns?.length
         });
     }
 
@@ -965,17 +1120,19 @@ function renderRouteSummary(results) {
             let from0Count = 0;
             let connectCount = 0;
 
-            if (results.bestRunsAll) {
-                results.bestRunsAll.forEach(r => {
-                    if (r.start === 0 && r.end >= bestFrom0) from0Count += r.count;
-                    if (r.start >= bestFrom0 - 5 && r.start <= bestFrom0 + 5 && r.end === 100) connectCount += r.count;
-                });
-            }
+            const from0Runs = results.from0Runs || [];
+            from0Runs.forEach(r => {
+                if (r && r.source === 'from0' && r.percent === bestFrom0) from0Count += (r.count || 0);
+            });
+            const startposRuns = results.startposRuns || [];
+            startposRuns.forEach(r => {
+                if (r && r.source === 'startpos' && r.start >= bestFrom0 - 5 && r.start <= bestFrom0 + 5 && r.end >= 100) connectCount += (r.count || 0);
+            });
 
             const from0Text = from0Count > 0 ? `${from0Count}x` : '?';
             const connectText = connectCount > 0 ? `${connectCount}x` : '0x';
 
-            const recommendedRoute = `0-${bestFrom0}% (${from0Text}) + ${bestFrom0}-100% (${connectText})`;
+            const recommendedRoute = `0-${round1(bestFrom0)}% (${from0Text}) + ${round1(bestFrom0)}-100% (${connectText})`;
             minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">${recommendedSegments}</span><br/><span style="font-size: 11px; color: var(--muted-gray);">${recommendedRoute}</span>`;
         } else if (bestFrom0 === 100) {
             minRunsEl.innerHTML = `<span style="font-size: 14px; font-weight: 600;">✅</span><br/><span style="font-size: 11px; color: var(--muted-gray);">Already beaten!</span>`;
@@ -1018,12 +1175,12 @@ function renderRouteSummary(results) {
 }
 
 // ============================================================================
-// NERVE CHART VISUALIZATION (Canvas-based v6.1)
+// NERVE CHART VISUALIZATION (Canvas-based v8.3-PRO)
 // ============================================================================
 
 function renderNerveVisualization(nerveChart, passRateChunks) {
     const canvas = document.getElementById('nerve-visualization');
-    if (!canvas) return;
+    if (!canvas) return false;
 
     const parent = canvas.parentElement;
     const existingWarning = parent ? parent.querySelector('.ldm-warning') : null;
@@ -1031,20 +1188,41 @@ function renderNerveVisualization(nerveChart, passRateChunks) {
     if (existingWarning) existingWarning.remove();
     canvas.style.display = '';
 
-    // Make canvas responsive
-    const containerWidth = (parent ? parent.clientWidth : 600) || 600;
-    canvas.width = containerWidth;
-    canvas.height = Math.max(160, Math.round(containerWidth * 0.37));
-    canvas.style.width = '100%';
-    canvas.style.height = canvas.height + 'px';
+    // BUG FIX v8.3: Robust canvas sizing with fallback for hidden containers / mobile
+    let containerWidth = (parent ? parent.clientWidth : 0) || 0;
+    let containerHeight = (parent ? parent.clientHeight : 0) || 0;
+
+    // Fallback: if container has 0 size (hidden tab, not yet laid out), use viewport or default
+    if (containerWidth === 0) {
+        containerWidth = Math.min(Math.max(window.innerWidth - 40, 280), 600);
+    }
+    if (containerHeight === 0) {
+        containerHeight = Math.max(160, Math.round(containerWidth * 0.37));
+    }
+    containerHeight = Math.min(containerHeight, 240);
+
+    // Handle device pixel ratio for crisp rendering on mobile
+    const dpr = window.devicePixelRatio || 1;
+    if (containerWidth <= 0 || containerHeight <= 0) return false;
+    canvas.width = Math.max(1, Math.round(containerWidth * dpr));
+    canvas.height = Math.max(1, Math.round(containerHeight * dpr));
+    canvas.style.width = containerWidth + 'px';
+    canvas.style.height = containerHeight + 'px';
 
     const ctx = canvas.getContext('2d');
-    const width = canvas.width;
-    const height = canvas.height;
+    if (!ctx) return false;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // Scale all drawing by DPR
+    const width = containerWidth;
+    const height = containerHeight;
     const isMobile = document.body.classList.contains('mobile-mode');
     const padding = isMobile ? 28 : 40;
     const plotWidth = width - padding * 2;
     const plotHeight = height - padding * 2;
+
+    // LDM AUDIT v8.3: Charts MUST render in all modes — LDM only affects decorative effects
+    const isLDM = document.body.classList.contains('ldm-enabled');
+    // Note: isLDM flag available for future use (e.g., reducing animation complexity)
+    // Charts, metrics, exports, and analysis logic are NEVER disabled in LDM.
 
     // Clear canvas
     ctx.fillStyle = 'rgba(3, 4, 7, 0.5)';
@@ -1172,15 +1350,16 @@ function renderNerveVisualization(nerveChart, passRateChunks) {
         ctx.fillStyle = '#10B981';
         ctx.fillText('Pass%', legendX + (isMobile ? 82 : 102), legendY + 3);
     }
+    return true;
 }
 
 // ============================================================================
-// SKILL PROGRESSION CURVE (Canvas-based v6.1)
+// SKILL PROGRESSION CURVE (Canvas-based v8.3-PRO)
 // ============================================================================
 
 function renderSkillProgressionCurve(results) {
     const canvas = document.getElementById('skill-curve-canvas');
-    if (!canvas) return;
+    if (!canvas) return false;
 
     const parent = canvas.parentElement;
     const existingWarning = parent ? parent.querySelector('.ldm-warning') : null;
@@ -1188,20 +1367,45 @@ function renderSkillProgressionCurve(results) {
     if (existingWarning) existingWarning.remove();
     canvas.style.display = '';
 
-    // Make canvas responsive
-    const containerWidth2 = (parent ? parent.clientWidth : 600) || 600;
-    canvas.width = containerWidth2;
-    canvas.height = Math.max(160, Math.round(containerWidth2 * 0.37));
-    canvas.style.width = '100%';
-    canvas.style.height = canvas.height + 'px';
+    // BUG FIX v8.3: Robust canvas sizing with fallback for hidden containers / mobile
+    let containerWidth2 = (parent ? parent.clientWidth : 0) || 0;
+    let containerHeight2 = (parent ? parent.clientHeight : 0) || 0;
+
+    // Fallback: if container has 0 size (hidden tab, not yet laid out), use viewport or default
+    if (containerWidth2 === 0) {
+        containerWidth2 = Math.min(Math.max(window.innerWidth - 40, 280), 600);
+    }
+    if (containerHeight2 === 0) {
+        containerHeight2 = Math.max(160, Math.round(containerWidth2 * 0.37));
+    }
+
+    // Extra safety: ensure minimum dimensions for mobile browsers
+    containerWidth2 = Math.max(containerWidth2, 280);
+    containerHeight2 = Math.max(containerHeight2, 140);
+    containerHeight2 = Math.min(containerHeight2, 240);
+
+    // Handle device pixel ratio for crisp rendering on mobile
+    const dpr2 = window.devicePixelRatio || 1;
+    if (containerWidth2 <= 0 || containerHeight2 <= 0) return false;
+    canvas.width = Math.max(1, Math.round(containerWidth2 * dpr2));
+    canvas.height = Math.max(1, Math.round(containerHeight2 * dpr2));
+    canvas.style.width = containerWidth2 + 'px';
+    canvas.style.height = containerHeight2 + 'px';
 
     const ctx = canvas.getContext('2d');
-    const width = canvas.width;
-    const height = canvas.height;
+    if (!ctx) return false;
+    ctx.setTransform(dpr2, 0, 0, dpr2, 0, 0); // Scale all drawing by DPR
+    const width = containerWidth2;
+    const height = containerHeight2;
     const isMobile2 = document.body.classList.contains('mobile-mode');
     const padding = isMobile2 ? 30 : 40;
-    const plotWidth = width - padding * 2;
-    const plotHeight = height - padding * 2;
+    const plotWidth = Math.max(width - padding * 2, 100);
+    const plotHeight = Math.max(height - padding * 2, 60);
+
+    // LDM AUDIT v8.3: Charts MUST render in all modes — LDM only affects decorative effects
+    const isLDM = document.body.classList.contains('ldm-enabled');
+    // Note: isLDM flag available for future use (e.g., reducing animation complexity)
+    // Charts, metrics, exports, and analysis logic are NEVER disabled in LDM.
 
     // Clear canvas
     ctx.fillStyle = 'rgba(3, 4, 7, 0.5)';
@@ -1336,13 +1540,14 @@ function renderSkillProgressionCurve(results) {
 
     // Update stats
     document.getElementById('current-skill-percent').textContent = `${currentBest}%`;
-    document.getElementById('projected-skill-percent').textContent = `${projectedAfter100.toFixed(1)}%`;
+    document.getElementById('projected-skill-percent').textContent = `${round1(projectedAfter100)}%`;
     document.getElementById('plateau-risk-indicator').textContent = projectedAfter100 - currentBest < 2 ? '🔴 HIGH' : projectedAfter100 - currentBest < 5 ? '🟡 MEDIUM' : '🟢 LOW';
 
     // Estimate time to beat (based on average attempts per run)
     const runsNeeded = Math.ceil((100 - currentBest) / estimatedProgressPerRun);
     const estimatedTime = Math.ceil(runsNeeded / 5); // Assume 5 runs per session
     document.getElementById('time-to-beat').textContent = `${estimatedTime} sessions`;
+    return true;
 }
 
 function renderDeathDistribution(deathData) {
@@ -1362,8 +1567,9 @@ function renderDeathDistribution(deathData) {
 
         const barWidth = Math.min(100, round1(item.percentage) * 5);
 
-        const riskClass = item.riskLevel === 'HELL ZONE 💀' ? 'death-high' :
-            item.riskLevel === 'STRESSFUL 🟡' ? 'death-medium' : 'death-low';
+        const riskClass = item.riskLevel === 'High' ? 'death-high' :
+            item.riskLevel === 'Medium' ? 'death-medium' :
+            item.riskLevel === 'Low' ? 'death-low' : 'death-low';
 
         barContainer.innerHTML = `
             <div class="death-info">
@@ -1415,7 +1621,7 @@ function renderHeatmap(segmentData) {
     container.innerHTML = '';
 
     const from0Freq = analysisResults?.from0Freq || {};
-    const startposRuns = (analysisResults?.bestRunsAll || []).filter(r => r.type === 'run');
+    const startposRuns = analysisResults?.startposRuns || [];
 
     // Calculate max deaths in any 10% block for normalization
     let maxBlockDeaths = 0;
@@ -1448,19 +1654,16 @@ function renderHeatmap(segmentData) {
         segmentEl.className = 'heatmap-segment';
         segmentEl.setAttribute('data-label', `${start}-${end}`);
 
-        // Use CSS classes based on death density thresholds (matching the legend)
-        if (maxBlockDeaths > 0 && blockDeaths > 0) {
-            const ratio = blockDeaths / maxBlockDeaths;
-            if (ratio >= 0.7) {
-                segmentEl.classList.add('high');
-            } else if (ratio >= 0.3) {
-                segmentEl.classList.add('medium');
-            } else {
-                segmentEl.classList.add('low');
-            }
+        let colorTier;
+        if (analysisResults?.deathDistribution?.length > 0) {
+            const matchingSegment = analysisResults.deathDistribution.find(d => d.start === start);
+            colorTier = matchingSegment ? matchingSegment.colorTier : 'safe';
         } else {
-            segmentEl.classList.add('safe');
+            const ratio = maxBlockDeaths > 0 ? blockDeaths / maxBlockDeaths : 0;
+            colorTier = typeof getColorTier !== 'undefined' ? getColorTier(ratio) : 
+                              (ratio >= 0.7 ? 'high' : ratio >= 0.3 ? 'medium' : ratio > 0 ? 'low' : 'safe');
         }
+        segmentEl.classList.add(colorTier);
 
         // Overlay: practice coverage indicator (cyan border)
         if (totalCoverage > 0) {
@@ -1489,8 +1692,8 @@ function renderRoutePath(results) {
     container.innerHTML = '';
 
     const bestFrom0 = results?.bestFrom0 || 0;
-    const startposRuns = (results?.bestRunsAll || []).filter(r => r.type === 'run');
-    const connectingRuns = startposRuns.filter(r => r.start <= bestFrom0 && r.end === 100);
+    const startposRuns = results?.startposRuns || [];
+    const connectingRuns = startposRuns.filter(r => r.start <= bestFrom0 && r.end >= 100);
 
     // Show actual completion ROUTES
     if (results && results.routes && results.routes.length > 0) {
@@ -1558,13 +1761,13 @@ function renderRoutePath(results) {
                 </div>
                 <div class="route-segment animated">
                     <div class="segment-label">
-                        <span class="segment-range">0% → ${bestFrom0}%</span>
-                        <span class="segment-length">(${bestFrom0}%)</span>
+                        <span class="segment-range">0% → ${round1(bestFrom0)}%</span>
+                        <span class="segment-length">(${round1(bestFrom0)}%)</span>
                         <span style="font-size: 10px; color: var(--cyan-glow);">from-0 proven</span>
                     </div>
-                    <div class="segment-bar high" style="width: ${bestFrom0}%; opacity: 0.7; border-left: 3px solid var(--cyan-glow);"></div>
+                    <div class="segment-bar high" style="width: ${round1(bestFrom0)}%; opacity: 0.7; border-left: 3px solid var(--cyan-glow);"></div>
                 </div>
-                <div style="text-align: center; color: var(--muted-gray); font-size: 11px; margin: 4px 0;">▼ ${bestConnect.start < bestFrom0 ? 'overlaps at ' + bestConnect.start + '%' : 'touches at ' + bestFrom0 + '%'}</div>
+                <div style="text-align: center; color: var(--muted-gray); font-size: 11px; margin: 4px 0;">▼ ${bestConnect.start < bestFrom0 ? 'overlaps at ' + round1(bestConnect.start) + '%' : 'touches at ' + round1(bestFrom0) + '%'}</div>
                 <div class="route-segment animated" style="animation-delay: 0.12s">
                     <div class="segment-label">
                         <span class="segment-range">${bestConnect.start}% → 100%</span>
@@ -1586,7 +1789,7 @@ function renderRoutePath(results) {
 
     // Only from-0 data - explain need for endgame practice
     if (bestFrom0 > 0 && startposRuns.length === 0) {
-        container.innerHTML = `<div class="empty-state">Best from-0: ${bestFrom0}%<br><small>Practice ${bestFrom0}-100% with startpos to see completion routes.</small></div>`;
+        container.innerHTML = `<div class="empty-state">Best from-0: ${round1(bestFrom0)}%<br><small>Practice ${round1(bestFrom0)}-100% with startpos to see completion routes.</small></div>`;
         return;
     }
 
@@ -1648,8 +1851,8 @@ function updateHeroStats(results) {
 
     const values = [
         results.totalAttempts,
-        results.bestFrom0 + '%',
-        results.readiness + '%',
+        round1(results.bestFrom0) + '%',
+        round1(results.readiness) + '%',
         results.routeReliability
     ];
 
@@ -1661,9 +1864,9 @@ function updateHeroStats(results) {
         }
     });
 
-    document.getElementById('hero-best-run').textContent = results.bestFrom0 + '%';
-    document.getElementById('hero-readiness').textContent = results.readiness + '%';
-    document.getElementById('hero-progression').textContent = results.practiceCoverage + '%';
+    document.getElementById('hero-best-run').textContent = round1(results.bestFrom0) + '%';
+    document.getElementById('hero-readiness').textContent = round1(results.readiness) + '%';
+    document.getElementById('hero-progression').textContent = round1(results.coverage) + '%';
     document.getElementById('hero-nerves').textContent = results.nervesTier;
 
     const deathDist = results.deathDistribution;
@@ -1673,18 +1876,10 @@ function updateHeroStats(results) {
     const gaps = results.coverageGaps || [];
     document.getElementById('hero-practice-gaps').textContent = gaps.length;
 
-    const worst = deathDist[0];
-    document.getElementById('hero-weakest').textContent = worst ? worst.segment : '--';
-    document.getElementById('hero-confidence').textContent = results.readiness + '%';
-
-    const routesFound = results.routes ? results.routes.length : 0;
-    const hasFrom0 = results.bestFrom0 > 0;
-    const hasStartpos = results.startposAttempts > 0;
-    let routeDisplay = routesFound;
-    if (routesFound === 0 && hasFrom0 && hasStartpos) routeDisplay = '2+ possible';
-    else if (routesFound === 0 && !hasFrom0) routeDisplay = 'need from-0';
-    else if (routesFound === 0 && !hasStartpos) routeDisplay = 'need endgame';
-    document.getElementById('hero-routes-found').textContent = routeDisplay;
+    const hotspot = analysisResults.hotspots && analysisResults.hotspots.weakestSection;
+    const worst = hotspot || (deathDist.length > 0 ? deathDist[0] : null);
+    document.getElementById('hero-weakest').textContent = worst ? (worst.range || worst.segment || `${worst.start}-${worst.end}`) : '--';
+    document.getElementById('hero-confidence').textContent = round1(results.readiness) + '%';
 }
 
 // ============================================================================
@@ -1875,7 +2070,7 @@ function showRoutes() {
     if (!analysisResults || !analysisResults.routes || analysisResults.routes.length === 0) {
         const bestFrom0 = analysisResults?.bestFrom0 || 0;
         const message = bestFrom0 > 0
-            ? `<div class="empty-state">No completion routes found yet.<br/><small>You've reached ${bestFrom0}% — keep grinding! Once you complete the level, routes will appear here.</small></div>`
+            ? `<div class="empty-state">No completion routes found yet.<br/><small>You've reached ${round1(bestFrom0)}% — keep grinding! Once you complete the level, routes will appear here.</small></div>`
             : `<div class="empty-state">No data available</div>`;
         container.innerHTML = message;
         if (summaryBanner) summaryBanner.style.display = 'none';
@@ -1981,15 +2176,19 @@ function populateDangerousSegment() {
         return;
     }
 
-    const deaths = Object.entries(analysisResults.from0Freq).sort((a, b) => b[1] - a[1]);
-
-    if (deaths.length === 0) {
+    const hotspot = analysisResults.hotspots && analysisResults.hotspots.weakestSection;
+    if (!hotspot) {
         container.innerHTML = '<div class="empty-state">No death data available</div>';
         return;
     }
 
-    const [dangerPercent, deathCount] = deaths[0];
-    const range = `${Math.max(0, dangerPercent - 5)}% - ${Math.min(100, parseInt(dangerPercent) + 5)}%`;
+    const range = hotspot.range || `${hotspot.start}-${hotspot.end}%`;
+    const deathCount = hotspot.deaths || 0;
+    const failureRate = hotspot.failureRate !== undefined ? `${round1(hotspot.failureRate * 100)}% fail rate` : '';
+    const relDiff = hotspot.relativeDifficulty !== undefined ? `${round1(hotspot.relativeDifficulty)}x avg difficulty` : '';
+    const spawnNote = analysisResults.hotspots.spawnBiasWarning
+        ? '<div class="detail-item" style="animation-delay: 0.2s"><span>Note</span><span>0-10% has high raw deaths but lower true difficulty (spawn bias)</span></div>'
+        : '';
 
     container.innerHTML = `
         <div class="detail-item" style="animation-delay: 0.05s">
@@ -2001,9 +2200,10 @@ function populateDangerousSegment() {
             <span class="animated-number" style="color: #FF6B9D; font-weight: 700;">${deathCount}</span>
         </div>
         <div class="detail-item" style="animation-delay: 0.15s">
-            <span>Danger Level</span>
-            <span class="pulse-element" style="color: #FF4FD8; font-weight: 700;">HIGH <span class="kpi-pulse"></span></span>
+            <span>Failure Density</span>
+            <span style="color: #FF4FD8; font-weight: 700;">${failureRate}${failureRate && relDiff ? ' · ' : ''}${relDiff}</span>
         </div>
+        ${spawnNote}
     `;
 
     animateNumbers();
@@ -2031,7 +2231,7 @@ function populateChokePoints() {
     }
 
     container.innerHTML = sortedChokes.map(([percent, count], index) => {
-        const rate = ((count / analysisResults.totalAttempts) * 100).toFixed(1);
+        const rate = round1((count / analysisResults.totalAttempts) * 100);
         return `
         <div class="detail-item" style="animation-delay: ${index * 0.05}s">
             <span>${index + 1}. Near ${percent}%</span>
@@ -2099,7 +2299,7 @@ function populateSessionStats() {
         </div>
         <div class="detail-item" style="animation-delay: 0.1s">
             <span>Best From 0</span>
-            <span class="animated-number">${analysisResults.bestFrom0}%</span>
+            <span class="animated-number">${round1(analysisResults.bestFrom0)}%</span>
         </div>
         <div class="detail-item" style="animation-delay: 0.15s">
             <span>Startpos Attempts</span>
@@ -2194,6 +2394,19 @@ function populatePracticeMap() {
 
     const detailHeatmap = document.getElementById('detail-heatmap');
     if (detailHeatmap && analysisResults.from0Freq) {
+        // Calculate max deaths for normalization
+        const from0Freq = analysisResults.from0Freq || {};
+        let maxBlockDeaths = 0;
+        for (let b = 0; b < 10; b++) {
+            const start = b * 10, end = (b + 1) * 10;
+            let blockDeaths = 0;
+            for (const [p, c] of Object.entries(from0Freq)) {
+                const percent = parseInt(p, 10);
+                if (percent >= start && percent < end) blockDeaths += c;
+            }
+            maxBlockDeaths = Math.max(maxBlockDeaths, blockDeaths);
+        }
+
         for (let b = 0; b < 10; b++) {
             const start = b * 10;
             const end = (b + 1) * 10;
@@ -2203,16 +2416,23 @@ function populatePracticeMap() {
             segmentEl.className = 'heatmap-segment';
             segmentEl.setAttribute('data-label', `${start}-${end}`);
 
-            if (segment && segment.passRate !== null) {
-                if (segment.passRate < 30) segmentEl.classList.add('high');
-                else if (segment.passRate < 60) segmentEl.classList.add('medium');
-                else if (segment.passRate < 80) segmentEl.classList.add('low');
-                else segmentEl.classList.add('safe');
-                segmentEl.title = `${start}%-${end}%: ${round1(segment?.passRate)}% pass rate`;
-            } else {
-                segmentEl.style.background = 'rgba(255, 255, 255, 0.05)';
-                segmentEl.title = `${start}%-${end}%: No data`;
+            // Calculate death density for this block
+            let blockDeaths = 0;
+            for (const [p, c] of Object.entries(from0Freq)) {
+                const percent = parseInt(p, 10);
+                if (percent >= start && percent < end) blockDeaths += c;
             }
+
+            // Use getColorTier from analyzer.js for consistent color assignment based on death density
+            const ratio = maxBlockDeaths > 0 ? blockDeaths / maxBlockDeaths : 0;
+            const colorTier = typeof getColorTier !== 'undefined' ? getColorTier(ratio) : 
+                              (ratio >= 0.7 ? 'high' : ratio >= 0.3 ? 'medium' : ratio > 0 ? 'low' : 'safe');
+            segmentEl.classList.add(colorTier);
+
+            const passRate = segment && segment.passRate !== null ? round1(segment.passRate) : null;
+            const deathText = blockDeaths > 0 ? `${blockDeaths} deaths` : '0 deaths';
+            const passText = passRate !== null ? ` | Pass: ${passRate}%` : '';
+            segmentEl.title = `${start}%-${end}%: ${deathText}${passText}`;
 
             detailHeatmap.appendChild(segmentEl);
         }
@@ -2257,7 +2477,7 @@ function animateNumbers() {
             if (targetValue % 1 === 0 || (text.includes('%') && !text.includes('.'))) {
                 el.textContent = Math.round(currentValue) + suffix;
             } else {
-                el.textContent = currentValue.toFixed(1) + suffix;
+                el.textContent = safeToFixed(currentValue, 1) + suffix;
             }
 
             if (progress < 1) {
@@ -2300,6 +2520,401 @@ function copyToClipboard(text) {
         showToast('Failed to copy', 'error');
     });
 }
+// ============================================================================
+// EXPORT SYSTEM v8.3-PRO
+// ============================================================================
+
+function exportAnalysisResults() {
+    if (!analysisResults) {
+        showToast('No analysis data to export. Run an analysis first.', 'warning');
+        return;
+    }
+
+    const r = analysisResults;
+    const lines = [];
+    const D = (v) => v !== null && v !== undefined ? v : 'N/A';
+    const P = (v) => v !== null && v !== undefined && !isNaN(v) ? round1(v) : 'N/A';
+
+    lines.push('========================================');
+    lines.push('       DASHIQ ANALYSIS EXPORT');
+    lines.push('           v8.3-PRO');
+    lines.push('========================================');
+    lines.push('Generated: ' + new Date().toLocaleString());
+    lines.push('');
+
+    // ---- OVERALL GRADE ----
+    lines.push('OVERALL GRADE');
+    lines.push('-------------');
+    lines.push(`Grade Tier: ${D(r.overallGrade?.tier)}`);
+    lines.push(`Grade Score: ${P(r.overallGrade?.score)}/100`);
+    if (r.overallGrade?.breakdown) {
+        const b = r.overallGrade.breakdown;
+        lines.push(`  - Skill (w=16%): raw=${P(b.skillComponent)} pts → ${P((b.skillComponent||0)*0.16)}`);
+        lines.push(`  - Consistency (w=16%): raw=${P(b.consistencyComponent)} pts → ${P((b.consistencyComponent||0)*0.16)}`);
+        lines.push(`  - Best From 0 (w=22%): ${P(b.bestFrom0 || r.bestFrom0)}% → ${P(((b.bestFrom0 || r.bestFrom0)||0)*0.22)}`);
+        lines.push(`  - Endgame (w=24%, cap=85): raw=${P(b.endgameComponent)} → capped=${P(Math.min(b.endgameComponent||0,85))} → ${P(Math.min(b.endgameComponent||0,85)*0.24)}`);
+        lines.push(`  - Route (w=12%, cap=70): raw=${P(b.routeComponent)} → capped=${P(Math.min(b.routeComponent||0,70))} → ${P(Math.min(b.routeComponent||0,70)*0.12)}`);
+        lines.push(`  - Coverage (w=10%, cap=80): raw=${P(b.coverageComponent)} → capped=${P(Math.min(b.coverageComponent||0,80))} → ${P(Math.min(b.coverageComponent||0,80)*0.10)}`);
+        lines.push(`  [Weights sum to 1.0, caps prevent any single metric from dominating]`);
+    }
+    lines.push(`Confidence Level: ${D(r.confidenceLevel)}`);
+    lines.push('');
+
+    // ---- READINESS & PROBABILITY ----
+    lines.push('READINESS & PROBABILITY');
+    lines.push('-----------------------');
+    lines.push(`Readiness Score: ${P(r.readiness)}%`);
+    lines.push(`Completion Probability: ${P(r.completionProbability)}%`);
+    lines.push(`Attempt Estimate: ${(r.estimatedAttempts || 0).toLocaleString()}`);
+    lines.push(`Confidence Interval: ${D(r.confidenceInterval)}`);
+    lines.push(`Estimate Confidence: ${D(r.attemptEstimateConfidence)}`);
+    if (r.attemptEstimateBreakdown && typeof r.attemptEstimateBreakdown === 'object' && !r.attemptEstimateBreakdown.fallback) {
+        const eb = r.attemptEstimateBreakdown;
+        lines.push(`  - Base Estimate: ${D(eb.baseEstimate)}`);
+        lines.push(`  - Evidence Multiplier: ${D(eb.evidenceMultiplier)}`);
+        lines.push(`  - Skill Modifier: ${P(eb.skillModifier)}`);
+        lines.push(`  - Difficulty Modifier: ${P(eb.difficultyModifier)}`);
+        lines.push(`  - Route Modifier: ${P(eb.routeModifier)}`);
+        lines.push(`  - Duration Multiplier: ${P(eb.durationMultiplier)}`);
+    }
+    lines.push(`Progress Velocity: ${D(r.progressVelocity?.label)} (${P(r.progressVelocity?.score)})`);
+    lines.push(`Volatility: ${D(r.volatility)}`);
+    lines.push('');
+
+    // ---- SKILL METRICS ----
+    lines.push('SKILL METRICS');
+    lines.push('-------------');
+    lines.push(`Skill Score: ${P(r.skillScore)}%`);
+    lines.push(`Consistency Index: ${P(r.consistency)}%`);
+    lines.push(`Skill Tier: ${D(r.skillTier)}`);
+    lines.push(`Consistency Tier: ${D(r.consistencyTier)}`);
+    lines.push(`Nerves Tier: ${D(r.nervesTier)}`);
+    if (r.readinessBreakdown) {
+        const rb = r.readinessBreakdown;
+        lines.push(`Readiness Breakdown:`);
+        lines.push(`  - Skill: ${P(rb.skill)}%`);
+        lines.push(`  - Consistency: ${P(rb.consistency)}%`);
+        lines.push(`  - Ending: ${P(rb.ending)}%`);
+        lines.push(`  - Nerves: ${P(rb.nerves)}%`);
+    }
+    lines.push('');
+
+    // ---- CONSISTENCY METRICS ----
+    lines.push('CONSISTENCY METRICS');
+    lines.push('-------------------');
+    if (r.phaseConsistency) {
+        lines.push(`Phase Consistency Average: ${P(r.phaseConsistency.average)}%`);
+        lines.push(`Phase Stability: ${P(r.phaseConsistency.stability)}%`);
+    }
+    if (r.plateau) {
+        lines.push(`Plateau Detected: ${r.plateau.plateau ? 'YES' : 'NO'}`);
+        lines.push(`Attempts Since Best: ${(r.plateau.attemptsSinceBest || 0).toLocaleString()}`);
+        lines.push(`Plateau Factor: ${P(r.plateau.factor)}`);
+    }
+    if (r.spikeDensity) {
+        lines.push(`Spike Density: ${P(r.spikeDensity.density)}`);
+        lines.push(`Spike Count: ${r.spikeDensity.count || 0}`);
+    }
+    lines.push('');
+
+    // ---- NERVES METRICS ----
+    lines.push('NERVES METRICS');
+    lines.push('--------------');
+    lines.push(`Nerves Tier: ${D(r.nervesTier)}`);
+    lines.push(`Nerve Choke Type: ${D(r.nerveChokeType)}`);
+    if (r.openingPressure) {
+        lines.push(`Opening Pressure Spike: ${r.openingPressure.isolated ? 'YES' : 'NO'} (${P(r.openingPressure.percentage)}%)`);
+    }
+    if (r.nerveChart && r.nerveChart.length > 0) {
+        const criticalZones = r.nerveChart.filter(p => p.riskZone === 'CRITICAL');
+        const highestRisk = r.nerveChart.reduce((max, p) => parseFloat(p.nerveScore || 0) > parseFloat(max.nerveScore || 0) ? p : max, r.nerveChart[0]);
+        lines.push(`Highest Risk Zone: ${highestRisk.percent || 0}% (${P(highestRisk.nerveScore)} stress)`);
+        lines.push(`Critical Zones: ${criticalZones.length}`);
+    }
+    lines.push('');
+
+    // ---- ENDURANCE & DURATION ----
+    lines.push('ENDURANCE & DURATION');
+    lines.push('--------------------');
+    const dur = r.durationMetrics;
+    lines.push(`Endurance Rating: ${dur?.enduranceRating !== null && dur?.enduranceRating !== undefined ? P(dur.enduranceRating) + '%' : 'N/A'}`);
+    lines.push(`Death Density (raw): ${dur?.deathDensity?.rawDeathsPerMinute !== null && dur?.deathDensity?.rawDeathsPerMinute !== undefined ? safeToFixed(dur.deathDensity.rawDeathsPerMinute, 2) : 'N/A'}`);
+    lines.push(`Death Density (normalized): ${dur?.deathDensity?.normalizedScore !== null && dur?.deathDensity?.normalizedScore !== undefined ? safeToFixed(dur.deathDensity.normalizedScore, 3) : 'N/A'}`);
+    lines.push(`Practice Density: ${dur?.practiceDensity !== null && dur?.practiceDensity !== undefined ? safeToFixed(dur.practiceDensity, 2) : 'N/A'}`);
+    lines.push(`Duration Category: ${D(r.durationMetadata?.durationCategory)}`);
+    lines.push(`Duration Confidence: ${D(r.durationMetadata?.durationConfidence)}`);
+    if (dur?.adjustmentCaps) {
+        lines.push(`Adjustment Caps: readiness=${dur.adjustmentCaps.readiness}, completion=${dur.adjustmentCaps.completionProbability}, grade=${dur.adjustmentCaps.grade}`);
+    }
+    lines.push('');
+
+    // ---- DEMON READINESS ----
+    lines.push('DEMON READINESS');
+    lines.push('---------------');
+    if (r.demonReadiness) {
+        const demons = [
+            { key: 'easy', name: 'Easy Demon' },
+            { key: 'medium', name: 'Medium Demon' },
+            { key: 'hard', name: 'Hard Demon' },
+            { key: 'insane', name: 'Insane Demon' },
+            { key: 'extreme', name: 'Extreme Demon' }
+        ];
+        demons.forEach(d => {
+            const data = r.demonReadiness[d.key];
+            if (data) {
+                lines.push(`${d.name}: ${P(data.readiness)}% (${data.ready ? 'READY' : 'NOT READY'})`);
+                if (data.scores) {
+                    lines.push(`  Mech: ${P(data.scores.mechanical)}% | Cons: ${P(data.scores.consistency)}% | Endur: ${P(data.scores.endurance)}% | Nerves: ${P(data.scores.nerves)}% | Proof: ${P(data.scores.proof)}%`);
+                }
+            }
+        });
+    }
+    lines.push('');
+
+    // ---- ROUTE ANALYSIS ----
+    lines.push('ROUTE ANALYSIS');
+    lines.push('--------------');
+    lines.push(`Routes Found: ${r.totalRoutes || r.routes?.length || 0}`);
+    lines.push(`Route Count: ${r.routes?.length || 0}`);
+    lines.push(`Route Segments (best): ${r.routeSegments || 0}`);
+    lines.push(`Route Reliability: ${D(r.routeReliability)}`);
+    lines.push(`Coverage Gaps: ${(r.coverageGaps || []).length}`);
+    if (r.routes && r.routes.length > 0) {
+        lines.push(`Best Route: ${r.routes[0].route ? r.routes[0].route.join(' → ') : 'N/A'}`);
+    }
+    if (r.sourceSeparation?.sourceCounts) {
+        const sc = r.sourceSeparation.sourceCounts;
+        lines.push(`Source Counts: from0=${sc.from0 || 0}, startpos=${sc.startpos || 0}, completions=${sc.explicit_completion || 0}`);
+    }
+    lines.push('');
+
+    // ---- COACH INSIGHTS ----
+    lines.push('COACH INSIGHTS');
+    lines.push('--------------');
+    lines.push(`Next Action: ${D(r.coachSuggestions?.nextAction)}`);
+    lines.push(`Biggest Problem: ${D(r.coachSuggestions?.biggestGap)}`);
+    lines.push(`Best Practice Route: ${D(r.coachSuggestions?.bestRoute)}`);
+    lines.push(`Strong Areas: ${D(r.coachSuggestions?.strongAreas)}`);
+    lines.push(`Today Focus: ${D(r.coachSuggestions?.todayFocus)}`);
+    lines.push('');
+
+    // ---- WEAKEST SECTION ----
+    lines.push('WEAKEST SECTION');
+    lines.push('---------------');
+    if (r.hotspots?.weakestSection) {
+        const w = r.hotspots.weakestSection;
+        lines.push(`Range: ${w.range || w.segment || `${w.start}-${w.end}%`}`);
+        lines.push(`Deaths: ${w.deaths || 0}`);
+        lines.push(`Failure Rate: ${P(w.failureRate)}`);
+        lines.push(`Relative Difficulty: ${P(w.relativeDifficulty)}x`);
+        lines.push(`Hotspot Score: ${P(w.hotspotScore)}`);
+    } else if (r.deathDistribution && r.deathDistribution.length > 0) {
+        const d = r.deathDistribution[0];
+        lines.push(`Range: ${d.segment || `${d.start}-${d.end}%`}`);
+        lines.push(`Deaths: ${d.deaths || 0}`);
+        lines.push(`Percentage: ${P(d.percentage)}%`);
+    } else {
+        lines.push('No data available');
+    }
+    if (r.deathClusters && r.deathClusters.length > 0) {
+        lines.push(`Death Clusters: ${r.deathClusters.length}`);
+        r.deathClusters.slice(0, 5).forEach((c, i) => {
+            lines.push(`  ${i + 1}. ${c.start}%-${c.end}%: ${c.totalDeaths} deaths (${c.points} points)`);
+        });
+    }
+    lines.push('');
+
+    // ---- DEATH DISTRIBUTION ----
+    lines.push('DEATH DISTRIBUTION');
+    lines.push('------------------');
+    if (r.deathDistribution && r.deathDistribution.length > 0) {
+        r.deathDistribution.forEach((d, i) => {
+            lines.push(`${i + 1}. ${d.segment || `${d.start}-${d.end}%`}: ${d.deaths} deaths (${P(d.percentage)}%) [${d.riskLevel || 'Unknown'} risk]`);
+        });
+    } else {
+        lines.push('No death data available');
+    }
+    lines.push('');
+
+    // ---- PASS RATE BY SEGMENT ----
+    lines.push('SEGMENT PASS RATES');
+    lines.push('------------------');
+    if (r.passRateByChunks) {
+        r.passRateByChunks.forEach(chunk => {
+            const extra = chunk.hasData ? ` | ${chunk.successfulPasses || 0} passes / ${chunk.samples || 0} samples` : '';
+            lines.push(`${chunk.chunk}: ${P(chunk.passRate)}% pass (${chunk.deaths || 0} deaths) [${chunk.color || 'unknown'}]${extra}`);
+        });
+    }
+    lines.push('');
+
+    // ---- MOST STABLE RUNS ----
+    lines.push('MOST STABLE RUNS (Top 10)');
+    lines.push('--------------------------');
+    if (r.stableRuns && r.stableRuns.length > 0) {
+        r.stableRuns.slice(0, 10).forEach((run, i) => {
+            lines.push(`${i + 1}. ${run.start}% - ${run.end}% (x${run.count}, score: ${P(run.stabilityScore)})`);
+        });
+    } else {
+        lines.push('No stable runs data');
+    }
+    lines.push('');
+
+    // ---- LONGEST RUNS ----
+    lines.push('LONGEST RUNS (Top 10)');
+    lines.push('---------------------');
+    if (r.longestRuns && r.longestRuns.length > 0) {
+        r.longestRuns.slice(0, 10).forEach((run, i) => {
+            lines.push(`${i + 1}. ${run.start}% - ${run.end}% (length: ${(run.end || 0) - (run.start || 0)}%, x${run.count})`);
+        });
+    } else {
+        lines.push('No longest runs data');
+    }
+    lines.push('');
+
+    // ---- SESSION OVERVIEW ----
+    lines.push('SESSION OVERVIEW');
+    lines.push('----------------');
+    lines.push(`Total Attempts: ${(r.totalAttempts || 0).toLocaleString()}`);
+    lines.push(`Best From 0: ${P(r.bestFrom0)}%`);
+    lines.push(`Coverage: ${P(r.coverage)}%`);
+    lines.push(`Mode: ${formatMode(r.mode || 'standard')}`);
+    lines.push(`Completions: ${r.completions || 0}`);
+    lines.push(`From 0 Deaths: ${r.from0Deaths || 0}`);
+    lines.push(`Startpos Attempts: ${r.startposAttempts || 0}`);
+    lines.push(`From 0 Attempts: ${r.from0Attempts || 0}`);
+    if (r.datasetSafeguards) {
+        lines.push(`Dataset Confidence: ${D(r.datasetSafeguards.confidenceLevel)}`);
+    }
+    lines.push('');
+
+    // ---- PERCENTILES ----
+    lines.push('PERCENTILES');
+    lines.push('-----------');
+    if (r.percentiles) {
+        lines.push(`P10: ${r.percentiles.p10 || 0}%`);
+        lines.push(`P25: ${r.percentiles.p25 || 0}%`);
+        lines.push(`P50 (Median): ${r.percentiles.p50 || 0}%`);
+        lines.push(`P75: ${r.percentiles.p75 || 0}%`);
+        lines.push(`P90: ${r.percentiles.p90 || 0}%`);
+        lines.push(`Best: ${r.percentiles.best || 0}%`);
+        lines.push(`Mean: ${P(r.percentiles.mean)}%`);
+        lines.push(`Std Dev: ${P(r.percentiles.stdDev)}`);
+        lines.push(`Total Attempts: ${(r.percentiles.attempts || 0).toLocaleString()}`);
+    }
+    lines.push('');
+
+    // ---- COVERAGE GAPS ----
+    lines.push('COVERAGE GAPS');
+    lines.push('-------------');
+    if (r.coverageGaps && r.coverageGaps.length > 0) {
+        r.coverageGaps.forEach((g, i) => {
+            lines.push(`${i + 1}. ${g.start}% - ${g.end}% (${(g.end - g.start)}% gap)`);
+        });
+    } else {
+        lines.push('No coverage gaps identified');
+    }
+    lines.push('');
+
+    // ---- DEATH CLUSTERS ----
+    lines.push('DEATH CLUSTERS');
+    lines.push('--------------');
+    if (r.deathClusters && r.deathClusters.length > 0) {
+        r.deathClusters.forEach((c, i) => {
+            lines.push(`${i + 1}. ${c.start}%-${c.end}%: ${c.totalDeaths} deaths (${c.points} points)`);
+        });
+    } else {
+        lines.push('No death clusters identified');
+    }
+    lines.push('');
+
+    // ---- HOTSPOTS ----
+    lines.push('HOTSPOTS');
+    lines.push('--------');
+    if (r.hotspots?.topHotspots && r.hotspots.topHotspots.length > 0) {
+        r.hotspots.topHotspots.forEach((h, i) => {
+            lines.push(`${i + 1}. ${h.range || h.segment}: score=${P(h.hotspotScore)}, failures=${P(h.failureRate)}, relDiff=${P(h.relativeDifficulty)}x`);
+        });
+    } else {
+        lines.push('No hotspot data available');
+    }
+    lines.push('');
+
+    // ---- NERVE CHART DATA ----
+    lines.push('NERVE CHART (Stress by Level %)');
+    lines.push('---------------------------------');
+    if (r.nerveChart && r.nerveChart.length > 0) {
+        const critical = r.nerveChart.filter(p => p.riskZone === 'CRITICAL');
+        const high = r.nerveChart.filter(p => p.riskZone === 'HIGH');
+        lines.push(`Total points: ${r.nerveChart.length}`);
+        lines.push(`Critical zones: ${critical.length}`);
+        lines.push(`High-risk zones: ${high.length}`);
+        lines.push('');
+        lines.push('Stress points (every 10%):');
+        r.nerveChart.filter((_, i) => i % 5 === 0).forEach(p => {
+            lines.push(`  ${p.percent}%: stress=${P(p.nerveScore)} (${p.riskZone})`);
+        });
+    } else {
+        lines.push('No nerve chart data available');
+    }
+    lines.push('');
+
+    // ---- CONFIDENCE REPORT ----
+    lines.push('CONFIDENCE REPORT');
+    lines.push('-----------------');
+    if (r.confidenceReport) {
+        lines.push(`Confidence Level: ${D(r.confidenceReport.confidenceLevel)}`);
+        lines.push(`Message: ${D(r.confidenceReport.message)}`);
+        lines.push(`Provisional Weights: ${(r.confidenceReport.provisionalWeights || []).join(', ')}`);
+        if (r.confidenceReport.sourceAvailability) {
+            const sa = r.confidenceReport.sourceAvailability;
+            lines.push(`Data Sources: from0=${sa.from0}, startpos=${sa.startpos}, explicitCompletion=${sa.explicitCompletion}`);
+        }
+    }
+    lines.push(`Dataset Confidence: ${D(r.datasetSafeguards?.confidenceLevel)}`);
+    lines.push(`Provisional Weights: ${(r.provisionalWeights || []).join(', ')}`);
+    lines.push('');
+
+    // ---- SETTINGS / CONFIGURATION ----
+    lines.push('SETTINGS');
+    lines.push('--------');
+    lines.push(`Difficulty: ${D(r._difficultyLabel)} (${r._difficultyMultiplier || 'N/A'}x)`);
+    lines.push(`Length Category: ${D(r._lengthCategory) || 'Not set'}`);
+    lines.push(`Custom Duration: ${D(r._customDuration) || 'Not set'} ${r._customDurationMode ? '(' + r._customDurationMode + ')' : ''}`);
+    lines.push(`Analysis Mode: ${r.mode || 'standard'}`);
+    lines.push(`Confidence Level: ${D(r.confidenceLevel)}`);
+    lines.push('');
+
+    // ---- RAW INPUT DATA (for debugging) ----
+    lines.push('RAW INPUT DATA (first 2000 chars)');
+    lines.push('-----------------------------------');
+    if (r._rawInput) {
+        const raw = r._rawInput.substring(0, 2000);
+        lines.push(raw);
+        if (r._rawInput.length > 2000) {
+            lines.push(`... [truncated: ${(r._rawInput.length - 2000).toLocaleString()} more chars]`);
+        }
+    } else {
+        lines.push('No raw input stored');
+    }
+    lines.push('');
+
+    lines.push('========================================');
+    lines.push('Generated by DashIQ v8.3-PRO');
+    lines.push('========================================');
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `dashiq-analysis-${new Date().toISOString().slice(0, 10)}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast('Analysis exported to .txt file!', 'success');
+}
+
 
 // ============================================================================
 // ERROR HANDLING
@@ -2365,6 +2980,17 @@ function showOverallGrade() {
     const breakdown = grade.breakdown || {};
     const tier = (grade.tier || 'N/A').toLowerCase();
     
+    // Calculate weighted contributions for display using calibrated weights
+    const skillWeight = 0.16, consWeight = 0.16, bestWeight = 0.22;
+    const endWeight = 0.24, routeWeight = 0.12, covWeight = 0.10;
+    const bestFrom0Val = analysisResults?.bestFrom0 || 0;
+    const skillContrib = P((breakdown?.skillComponent || 0) * skillWeight);
+    const consContrib = P((breakdown?.consistencyComponent || 0) * consWeight);
+    const bestContrib = P(bestFrom0Val * bestWeight);
+    const endContrib = P(Math.min(breakdown?.endgameComponent || 0, 85) * endWeight);
+    const routeContrib = P(Math.min(breakdown?.routeComponent || 0, 70) * routeWeight);
+    const covContrib = P(Math.min(breakdown?.coverageComponent || 0, 80) * covWeight);
+
     container.innerHTML = `
         <div class="detail-item" style="animation-delay: 0.05s">
             <span>Overall Tier</span>
@@ -2375,20 +3001,28 @@ function showOverallGrade() {
             <span class="animated-number" style="font-size: 18px; font-weight: 800;">${round1(grade?.score)}/100</span>
         </div>
         <div class="detail-item" style="animation-delay: 0.15s">
-            <span>Skill Component</span>
-            <span class="animated-number">${round1(breakdown?.skillComponent)}%</span>
+            <span>Skill (w=${Math.round(skillWeight*100)}%)</span>
+            <span class="animated-number">${skillContrib}pts</span>
         </div>
         <div class="detail-item" style="animation-delay: 0.2s">
-            <span>Consistency Component</span>
-            <span class="animated-number">${round1(breakdown?.consistencyComponent)}%</span>
+            <span>Consistency (w=${Math.round(consWeight*100)}%)</span>
+            <span class="animated-number">${consContrib}pts</span>
         </div>
         <div class="detail-item" style="animation-delay: 0.25s">
-            <span>Readiness Component</span>
-            <span class="animated-number">${round1(breakdown?.readinessComponent)}%</span>
+            <span>Best From 0 (w=${Math.round(bestWeight*100)}%)</span>
+            <span class="animated-number">${bestContrib}pts</span>
         </div>
         <div class="detail-item" style="animation-delay: 0.3s">
-            <span>Proof Component (Completions)</span>
-            <span class="animated-number">${round1(breakdown?.proofComponent)}%</span>
+            <span>Endgame (w=${Math.round(endWeight*100)}%, cap=85)</span>
+            <span class="animated-number">${endContrib}pts</span>
+        </div>
+        <div class="detail-item" style="animation-delay: 0.35s">
+            <span>Route Confidence (w=${Math.round(routeWeight*100)}%, cap=70)</span>
+            <span class="animated-number">${routeContrib}pts</span>
+        </div>
+        <div class="detail-item" style="animation-delay: 0.4s">
+            <span>Coverage (w=${Math.round(covWeight*100)}%, cap=80)</span>
+            <span class="animated-number">${covContrib}pts</span>
         </div>
     `;
     animateNumbers();
@@ -2436,6 +3070,118 @@ function showNerveChartDetail() {
     animateNumbers();
 }
 
+
+
+// ============================================================================
+// CANVAS OBSERVERS — v8.3 Mobile Robustness
+// ResizeObserver + IntersectionObserver for hidden tab / mobile rendering
+// ============================================================================
+
+let _canvasResizeObserver = null;
+let _canvasIntersectionObserver = null;
+let _lastCanvasResults = null;
+
+function setupCanvasObservers(results) {
+    _lastCanvasResults = results;
+
+    // Disconnect previous observers to prevent duplicates
+    if (_canvasResizeObserver) { _canvasResizeObserver.disconnect(); _canvasResizeObserver = null; }
+    if (_canvasIntersectionObserver) { _canvasIntersectionObserver.disconnect(); _canvasIntersectionObserver = null; }
+
+    const nerveCanvas = document.getElementById('nerve-visualization');
+    const skillCanvas = document.getElementById('skill-curve-canvas');
+    const canvases = [nerveCanvas, skillCanvas].filter(Boolean);
+
+    if (canvases.length === 0) return;
+
+    // BUG FIX v8.3: Retry render with exponential backoff for mobile browsers
+    function retryRender(attempts) {
+        if (!_lastCanvasResults) return;
+        const nerve = document.getElementById('nerve-visualization');
+        const skill = document.getElementById('skill-curve-canvas');
+
+        let nerveRendered = false, skillRendered = false;
+
+        if (nerve) {
+            const rect = nerve.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0 && nerve.clientWidth > 0) {
+                nerveRendered = renderNerveVisualization(_lastCanvasResults.nerveChart || [], _lastCanvasResults.passRateByChunks || []) === true;
+            }
+        }
+        if (skill) {
+            const rect = skill.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0 && skill.clientWidth > 0) {
+                skillRendered = renderSkillProgressionCurve(_lastCanvasResults) === true;
+            }
+        }
+
+        if ((!nerveRendered || !skillRendered) && attempts < 5) {
+            setTimeout(() => retryRender(attempts + 1), Math.pow(2, attempts) * 100);
+        }
+    }
+
+    // ResizeObserver: re-render when container size changes
+    if (typeof ResizeObserver !== 'undefined') {
+        _canvasResizeObserver = new ResizeObserver((entries) => {
+            let shouldRender = false;
+            for (const entry of entries) {
+                const rect = entry.contentRect;
+                if (rect.width > 0 && rect.height > 0) {
+                    shouldRender = true;
+                }
+            }
+            if (shouldRender && _lastCanvasResults) {
+                // Debounce: wait for resize to settle
+                clearTimeout(window._canvasRenderTimeout);
+                window._canvasRenderTimeout = setTimeout(() => {
+                    retryRender(0);
+                }, 150);
+            }
+        });
+        canvases.forEach(c => _canvasResizeObserver.observe(c.parentElement || c));
+    }
+
+    // IntersectionObserver: re-render when canvas becomes visible (tab switch, scroll)
+    if (typeof IntersectionObserver !== 'undefined') {
+        _canvasIntersectionObserver = new IntersectionObserver((entries) => {
+            for (const entry of entries) {
+                if (entry.isIntersecting && _lastCanvasResults) {
+                    const canvas = entry.target;
+                    // Re-render with retry logic for mobile
+                    clearTimeout(window._canvasRenderTimeout);
+                    window._canvasRenderTimeout = setTimeout(() => {
+                        retryRender(0);
+                    }, 100);
+                }
+            }
+        }, { threshold: 0.1 });
+        canvases.forEach(c => _canvasIntersectionObserver.observe(c));
+    }
+
+    // Initial retry render for mobile browsers that need time to layout
+    setTimeout(() => retryRender(0), 300);
+}
+
+// Window resize handler for orientation changes
+window.addEventListener('resize', () => {
+    if (_lastCanvasResults) {
+        clearTimeout(window._canvasRenderTimeout);
+        window._canvasRenderTimeout = setTimeout(() => {
+            renderNerveVisualization(_lastCanvasResults.nerveChart || [], _lastCanvasResults.passRateByChunks || []);
+            renderSkillProgressionCurve(_lastCanvasResults);
+        }, 200);
+    }
+});
+
+// Visibility change: re-render when tab becomes visible
+window.addEventListener('visibilitychange', () => {
+    if (!document.hidden && _lastCanvasResults) {
+        setTimeout(() => {
+            renderNerveVisualization(_lastCanvasResults.nerveChart || [], _lastCanvasResults.passRateByChunks || []);
+            renderSkillProgressionCurve(_lastCanvasResults);
+        }, 100);
+    }
+});
 
 // ============================================================================
 // ZIP DOWNLOAD FUNCTIONALITY
