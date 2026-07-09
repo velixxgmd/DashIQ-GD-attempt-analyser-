@@ -161,10 +161,10 @@ body {
 
 @keyframes floatParticle {
     0% { transform: translateY(110vh) translateX(0) scale(0); opacity: 0; }
-    8% { opacity: 0.7; }
-    50% { transform: translateY(50vh) translateX(30px) scale(1); opacity: 0.4; }
-    92% { opacity: 0.7; }
-    100% { transform: translateY(-10vh) translateX(60px) scale(0); opacity: 0; }
+    6% { opacity: 0.65; }
+    50% { transform: translateY(50vh) translateX(35px) scale(1); opacity: 0.45; }
+    94% { opacity: 0.65; }
+    100% { transform: translateY(-10vh) translateX(70px) scale(0); opacity: 0; }
 }
 
 /* ─── Sparkles ─── */
@@ -387,9 +387,9 @@ body {
 }
 
 @keyframes linePulse {
-    0% { stroke-width: 0.4; opacity: 0.3; }
-    50% { stroke-width: 1.2; opacity: 0.9; }
-    100% { stroke-width: 0.4; opacity: 0.3; }
+    0% { stroke-width: 0.35; opacity: 0.25; }
+    50% { stroke-width: 1.1; opacity: 0.85; }
+    100% { stroke-width: 0.35; opacity: 0.25; }
 }
 
 .constellation-dot {
@@ -398,8 +398,8 @@ body {
 }
 
 @keyframes starPulse {
-    0%, 100% { r: 1; opacity: 0.4; }
-    50% { r: 3; opacity: 1; }
+    0%, 100% { r: 1.2; opacity: 0.35; }
+    50% { r: 3.2; opacity: 1; }
 }
 
 /* Easter Egg Shape (rare) */
@@ -1415,6 +1415,89 @@ body.ldm-enabled .constellations-container {
     gap: 8px;
     margin-bottom: 20px;
     flex-wrap: wrap;
+}
+
+.duration-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+}
+
+.duration-controls label {
+    font-size: 14px;
+    color: var(--soft-white);
+    font-weight: 600;
+}
+
+.duration-controls select,
+.duration-input {
+    padding: 10px 16px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border-gray);
+    border-radius: var(--radius-md);
+    color: var(--soft-white);
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    font-family: var(--font-main);
+    min-width: 120px;
+}
+
+.duration-mode-btn {
+    padding: 8px 12px;
+    font-size: 12px;
+    min-width: 88px;
+}
+
+.duration-controls select:hover,
+.duration-controls select:focus,
+.duration-input:hover,
+.duration-input:focus {
+    border-color: var(--electric-blue);
+    outline: none;
+    background: rgba(0, 0, 0, 0.6);
+    box-shadow: 0 0 20px rgba(45, 107, 255, 0.1);
+}
+
+.duration-input:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.duration-checkbox {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted-gray);
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.duration-confidence-badge {
+    padding: 6px 10px;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--border-gray);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--muted-gray);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.duration-confidence-badge.high {
+    color: var(--emerald);
+    border-color: rgba(16, 185, 129, 0.35);
+}
+
+.duration-confidence-badge.medium {
+    color: #F59E0B;
+    border-color: rgba(245, 158, 11, 0.35);
+}
+
+.duration-confidence-badge.low {
+    color: #FF4FD8;
+    border-color: rgba(255, 79, 216, 0.35);
 }
 
 .chip {
@@ -2865,6 +2948,11 @@ body.ldm-enabled .ldm-warning {
 .tier-c { background: rgba(245, 158, 11, 0.15); color: var(--amber); box-shadow: 0 0 10px rgba(245, 158, 11, 0.15); }
 .tier-d { background: rgba(239, 68, 68, 0.15); color: #EF4444; box-shadow: 0 0 10px rgba(239, 68, 68, 0.15); }
 .tier-f { background: rgba(239, 68, 68, 0.15); color: #EF4444; box-shadow: 0 0 10px rgba(239, 68, 68, 0.15); }
+
+.tier-badge.muted {
+    opacity: 0.4;
+    filter: grayscale(0.5);
+}
 
 /* ─── Grade Display ─── */
 .grade-display {
