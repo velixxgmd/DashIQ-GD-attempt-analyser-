@@ -8,7 +8,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <base target="_blank">
-<base target="_blank">
 </head>
 <body>
     <!-- Ambient Background Environment -->
@@ -84,7 +83,7 @@
             <div class="hero-left">
                 <div class="hero-badge">
                     <span class="badge-pulse"></span>
-                    <span class="badge-text">v7.0 Engine Active</span>
+                    <span class="badge-text">v8.3-PRO Engine Active</span>
                 </div>
                 <h1 class="hero-title">
                     <span class="gradient-text">See Your</span>
@@ -236,6 +235,24 @@
                 <button class="chip" data-difficulty="4.5">Insane Demon</button>
                 <button class="chip" data-difficulty="7.0">Extreme Demon</button>
             </div>
+            <div class="duration-controls">
+                <label>Length Category:</label>
+                <select id="length-category-select">
+                    <option value="" selected>Unknown (off)</option>
+                    <option value="tiny">Tiny (&lt; 10s)</option>
+                    <option value="short">Short (10–29s)</option>
+                    <option value="medium">Medium (30–59s)</option>
+                    <option value="long">Long (1–2 min)</option>
+                    <option value="xl">XL (&gt; 2 min)</option>
+                </select>
+                <label class="duration-checkbox">
+                    <input type="checkbox" id="use-custom-length" />
+                    Use Custom Length
+                </label>
+                <input id="duration-input" class="duration-input" type="text" placeholder="MM:SS or HH:MM:SS" disabled />
+                <button type="button" id="duration-mode-toggle" class="btn-secondary duration-mode-btn" disabled title="Toggle MM:SS / HH:MM:SS">MM:SS</button>
+                <span id="duration-confidence-badge" class="duration-confidence-badge">Confidence: Low</span>
+            </div>
             <textarea 
                 id="input-textarea" 
                 class="input-textarea" 
@@ -248,7 +265,7 @@ From 0: 45% x3, 67% x1
 Runs: 20-40% x5, 50-75% x2
 beat x1 (for verified completion)
 
-Tip: Type END on a new line to auto-analyze"
+Tip: Type END on a new line to auto-analyze, or type "export" to save"
             ></textarea>
             <div class="input-actions">
                 <button type="button" id="analyze-button" class="btn-analyze magnetic-btn">
@@ -257,12 +274,13 @@ Tip: Type END on a new line to auto-analyze"
                 </button>
                 <button type="button" class="btn-secondary" id="clear-btn">Clear</button>
                 <button type="button" class="btn-secondary" id="paste-demo-btn">Load Demo</button>
+                <button type="button" class="btn-secondary" id="export-data-btn">Export Analysis</button>
             </div>
             <div class="input-hint">
                 <span class="hint-icon">
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 10v-4m0-2v.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                 </span>
-                <span>Type <kbd>END</kbd> on a new line or click Analyze to start · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> shortcut</span>
+                <span>Type <kbd>END</kbd> to analyze, <kbd>export</kbd> to save, or <kbd>Ctrl</kbd>+<kbd>Enter</kbd> shortcut</span>
             </div>
         </div>
     </section>
@@ -292,6 +310,10 @@ Tip: Type END on a new line to auto-analyze"
                         <div class="preview-item">
                             <span class="preview-label">Tier Classification</span>
                             <span class="preview-value tier-badge" id="overall-grade-label">--</span>
+                        </div>
+                        <div class="preview-item">
+                            <span class="preview-label">Confidence</span>
+                            <span class="preview-value tier-badge" id="confidence-level">--</span>
                         </div>
                     </div>
                 </div>
@@ -597,6 +619,61 @@ Tip: Type END on a new line to auto-analyze"
                 </div>
             </div>
 
+            <!-- Duration Metrics (V8) -->
+            <div class="dashboard-card glass-panel" data-tilt>
+                <div class="card-glow"></div>
+                <div class="card-header">
+                    <div class="card-icon">⏱️</div>
+                    <h3>Endurance Rating</h3>
+                </div>
+                <div class="card-content">
+                    <div class="stat-row">
+                        <span class="stat-label">Endurance</span>
+                        <span class="stat-value animated-number" id="endurance-rating">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dashboard-card glass-panel" data-tilt>
+                <div class="card-glow"></div>
+                <div class="card-header">
+                    <div class="card-icon">🧮</div>
+                    <h3>Death Density</h3>
+                </div>
+                <div class="card-content">
+                    <div class="stat-row">
+                        <span class="stat-label">Deaths / min</span>
+                        <span class="stat-value animated-number" id="death-density-raw">--</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Normalized</span>
+                        <span class="stat-value animated-number" id="death-density-score">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dashboard-card glass-panel" data-tilt>
+                <div class="card-glow"></div>
+                <div class="card-header">
+                    <div class="card-icon">📏</div>
+                    <h3>Duration</h3>
+                </div>
+                <div class="card-content">
+                    <div class="stat-row">
+                        <span class="stat-label">Practice / min</span>
+                        <span class="stat-value animated-number" id="practice-density">--</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Category</span>
+                        <span class="stat-value tier-badge" id="duration-category">unknown</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Confidence</span>
+                        <span class="stat-value tier-badge" id="duration-confidence">low</span>
+                    </div>
+                </div>
+            </div>
+
             <!-- Demon Readiness (V7) -->
             <div class="dashboard-card glass-panel wide" data-tilt>
                 <div class="card-glow"></div>
@@ -683,7 +760,7 @@ Tip: Type END on a new line to auto-analyze"
                 </div>
             </div>
 
-            <!-- Nerve Chart / Stress Visualization (ENHANCED v6.1) -->
+            <!-- Nerve Chart / Stress Visualization (ENHANCED v8.3-PRO) -->
             <div class="dashboard-card wide clickable-card glass-panel" data-card="nerve-chart" data-tilt>
                 <div class="card-glow"></div>
                 <div class="card-header">
@@ -718,7 +795,7 @@ Tip: Type END on a new line to auto-analyze"
                 </div>
             </div>
 
-            <!-- Skill Progress Curve (NEW v6.1) -->
+            <!-- Skill Progression — Current vs Projected (NEW v8.3-PRO) -->
             <div class="dashboard-card wide glass-panel" data-tilt>
                 <div class="card-glow"></div>
                 <div class="card-header">
@@ -1179,7 +1256,7 @@ Tip: Type END on a new line to auto-analyze"
             </div>
         </div>
         <div class="footer-bottom">
-            <span>Powered by Cognitive Engine v6.0</span>
+            <span>Powered by Cognitive Engine v8.3-PRO</span>
         </div>
     </footer>
 
